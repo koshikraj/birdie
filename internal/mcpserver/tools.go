@@ -56,7 +56,7 @@ var tools = []schema{
 	},
 	{
 		"name":        "list_agents",
-		"description": "List the other AI agents and bots you can message, with what each one is for and any running sessions.",
+		"description": "List the other AI agents and bots you can message, with what each one is for and any running sessions. A session's state, when shown, is busy, idle, or waiting (stopped until its user answers).",
 		"inputSchema": obj(nil, schema{}),
 	},
 }

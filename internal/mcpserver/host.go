@@ -21,7 +21,9 @@ import (
 // SessionInfo describes the conversation a bridge serves right now.
 type SessionInfo struct {
 	ID, Name, Cwd string
-	ActiveAt      time.Time
+	// State is one of the bus.State values, or empty when the host can't tell.
+	State    string
+	ActiveAt time.Time
 }
 
 // Host is the agent program a bridge runs under. It knows which conversation
@@ -153,6 +155,7 @@ func (h *claudeHost) Session() SessionInfo {
 	if e.Name != "" && (e.NameSource != "auto" && e.NameSource != "derived" || info.Name == "") {
 		info.Name = slug(e.Name)
 	}
+	info.State = claudeStates[e.Status]
 	switch {
 	case e.Status == "busy":
 		info.ActiveAt = time.Now()
@@ -161,6 +164,9 @@ func (h *claudeHost) Session() SessionInfo {
 	}
 	return info
 }
+
+// claudeStates maps the status in Claude Code's registry entry to the bus's.
+var claudeStates = map[string]string{"busy": bus.StateBusy, "idle": bus.StateIdle, "waiting": bus.StateWaiting}
 
 func (h *claudeHost) socket() string {
 	if s := os.Getenv("CLAUDE_CODE_MESSAGING_SOCKET"); s != "" {
