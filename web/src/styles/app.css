@@ -184,7 +184,6 @@ a:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-visi
 /* Agent tiles */
 .agent-tile { flex: none; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; }
 .agent-tile-ring { outline: 2px solid var(--surface); }
-.agent-tile-terminal { fill: none; stroke: #FFFFFF; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .agent-tile-letter { font-family: var(--font-mono); font-weight: 500; line-height: 1; }
 .tile-pair { flex: none; display: flex; align-items: flex-start; }
 

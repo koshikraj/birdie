@@ -1,6 +1,7 @@
 import claudeIcon from '../assets/claude-code.svg';
 import codexIcon from '../assets/codex.svg';
 import grokBotIcon from '../assets/grok-bot.png';
+import grokIcon from '../assets/grok.svg';
 import hermesIcon from '../assets/hermes.png';
 import type { Agent, Delivery, Overview, Pair, Session } from '../api/types';
 
@@ -12,7 +13,7 @@ export interface Identity {
   product: string;
   /** The tile's background, a CSS color. */
   tile: string;
-  glyph: 'icon' | 'terminal' | 'letter' | 'face';
+  glyph: 'icon' | 'letter' | 'face';
   icon?: string;
   /** The icon fills its tile edge to edge. */
   full: boolean;
@@ -56,7 +57,7 @@ export function identity(name: string): Identity {
     return { ...base, product: 'Grok Bot', tile: '#000000', glyph: 'icon', icon: grokBotIcon, full: true, spec: 'arch', color: 3, sceneIcon: 68, sceneClip: true };
   }
   if (name === 'grok' || name === 'grok-tui') {
-    return { ...base, product: 'Grok CLI', tile: '#1B2022', glyph: 'terminal', full: false, spec: 'arch', color: 3, sceneIcon: 40 };
+    return { ...base, product: 'Grok CLI', tile: '#000000', glyph: 'icon', icon: grokIcon, full: false, spec: 'arch', color: 3, sceneIcon: 44 };
   }
   const h = hash(name);
   const color = ((h % 4) + 1) as AgentColor;

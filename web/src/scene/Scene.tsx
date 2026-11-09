@@ -658,10 +658,6 @@ function NameLabel({ x, y, name, id, clipId }: { x: number; y: number; name: str
             clipPath={id.full ? 'url(#' + clipId + ')' : undefined}
             preserveAspectRatio={id.full ? 'xMidYMid slice' : undefined}
           />
-        ) : id.glyph === 'terminal' ? (
-          <g transform="translate(3 3) scale(0.6667)">
-            <path d="M5 7l5 5-5 5M12 17h7" className="scene-terminal" />
-          </g>
         ) : (
           <text x={MINI / 2} y={MINI / 2 + 4.5} textAnchor="middle" className="scene-mini-letter" style={{ fill: 'var(--agent-' + id.color + '-on)' }}>
             {id.letter}

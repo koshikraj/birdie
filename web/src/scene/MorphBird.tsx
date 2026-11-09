@@ -105,13 +105,6 @@ function Glyph({ id, clipId, opacity }: { id: Identity; clipId: string; opacity:
       />
     );
   }
-  if (id.glyph === 'terminal') {
-    return (
-      <g transform="translate(-20 -54) scale(1.6667)" opacity={o}>
-        <path d="M5 7l5 5-5 5M12 17h7" className="scene-terminal" />
-      </g>
-    );
-  }
   return (
     <text x={0} y={-22} textAnchor="middle" opacity={o} className="scene-letter" style={{ fill: 'var(--agent-' + id.color + '-on)' }}>
       {id.letter}
