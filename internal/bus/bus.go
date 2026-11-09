@@ -49,6 +49,7 @@ type Bus struct {
 	mu      sync.Mutex
 	waiters map[string]map[chan struct{}]struct{}
 	kick    chan struct{}
+	watch   watchers
 }
 
 func New(s Store, log *slog.Logger, ds ...Deliverer) *Bus {
@@ -213,6 +214,7 @@ func (b *Bus) ReportSession(ctx context.Context, agent, id string, in SessionInp
 		return err
 	}
 	b.notify(agent)
+	b.emit(Event{Kind: "session", Type: "reported", Agent: agent, Session: id, Name: s.Name, State: s.State})
 	return nil
 }
 
@@ -223,6 +225,7 @@ func (b *Bus) EndSession(ctx context.Context, agent, id string) error {
 		return err
 	}
 	b.notify(agent)
+	b.emit(Event{Kind: "session", Type: "ended", Agent: agent, Session: id})
 	return nil
 }
 
@@ -327,9 +330,12 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 	if err := b.store.InsertMessage(ctx, m); err != nil {
 		return Message{}, err
 	}
+	b.emitMessage(StatusQueued, m, "", "")
 	if parent.ID != "" {
 		if err := b.store.MarkReplied(ctx, parent.ID, from); err != nil {
 			b.log.Error("mark replied", "id", parent.ID, "err", err)
+		} else if parent.To == from && parent.Status != StatusFailed {
+			b.emitMessage(StatusReplied, parent, "", "")
 		}
 	}
 	m.Note = b.deliveryNote(ctx, to, m)
@@ -366,6 +372,11 @@ func (b *Bus) ReceiveFor(ctx context.Context, in ReceiveInput) ([]Message, error
 		}
 		if err != nil || len(msgs) > 0 {
 			b.unsubscribe(in.Agent, ch)
+			if err == nil {
+				for _, m := range msgs {
+					b.emitMessage(m.Status, m, in.Session, "")
+				}
+			}
 			return msgs, err
 		}
 		remaining := time.Until(deadline)
@@ -426,7 +437,12 @@ func (b *Bus) claimFilter(ctx context.Context, in ReceiveInput) (ClaimFilter, er
 
 // Ack confirms the agent got a claimed message.
 func (b *Bus) Ack(ctx context.Context, agent, id string) error {
-	_, err := b.store.Settle(ctx, id, agent, true, time.Now())
+	changed, err := b.store.Settle(ctx, id, agent, true, time.Now())
+	if changed {
+		if m, err := b.store.GetMessage(ctx, id); err == nil {
+			b.emitMessage(StatusDelivered, m, "", "")
+		}
+	}
 	return err
 }
 
@@ -473,6 +489,7 @@ func (b *Bus) Notice(ctx context.Context, m Message, kind, text string) error {
 	if err := b.store.InsertMessage(ctx, n); err != nil {
 		return err
 	}
+	b.emitMessage(StatusQueued, n, "", "")
 	b.notify(m.From)
 	select {
 	case b.kick <- struct{}{}:
@@ -529,14 +546,15 @@ func (b *Bus) findSession(ctx context.Context, to Agent, want string) (Session, 
 	return Session{}, fmt.Errorf("%w: %s has %d sessions named %q; use one of %s", ErrInvalid, to.Name, len(match), want, strings.Join(ids, ", "))
 }
 
-// deliveryNote tells the sender when the recipient will see m.
+// deliveryNote tells the sender when the recipient will see m, naming it by
+// its label.
 func (b *Bus) deliveryNote(ctx context.Context, to Agent, m Message) string {
 	switch to.Delivery {
 	case DeliveryPull:
 	case "webhook":
-		return fmt.Sprintf("queued: being sent to %s's webhook; it answers in its own time", to.Name)
+		return fmt.Sprintf("queued: being sent to %s's webhook; it answers in its own time", to.DisplayName())
 	case "acp":
-		return fmt.Sprintf("queued: birdie will start %s for this and post its answer on this thread", to.Name)
+		return fmt.Sprintf("queued: birdie will start %s for this and post its answer on this thread", to.DisplayName())
 	default:
 		return "queued"
 	}
@@ -559,12 +577,12 @@ func (b *Bus) deliveryNote(ctx context.Context, to Agent, m Message) string {
 			}
 		}
 		if target == nil {
-			return fmt.Sprintf("queued: %s has no open session; it gets this when it next checks or starts", to.Name)
+			return fmt.Sprintf("queued: %s has no open session; it gets this when it next checks or starts", to.DisplayName())
 		}
 	}
-	name := to.Name
+	name := to.DisplayName()
 	if target.Name != "" {
-		name += "/" + target.Name
+		name += " · " + target.Name
 	}
 	switch target.Tier {
 	case TierPush:
@@ -657,12 +675,16 @@ func (b *Bus) deliverDue(ctx context.Context) {
 		if errors.Is(err, ErrAccepted) {
 			if err := b.store.MarkClaimed(ctx, o.Message.ID); err != nil {
 				b.log.Error("mark claimed", "id", o.Message.ID, "err", err)
+			} else {
+				b.emitMessage(StatusClaimed, o.Message, "", "")
 			}
 			continue
 		}
 		if err == nil {
 			if err := b.store.MarkDelivered(ctx, o.Message.ID, time.Now()); err != nil {
 				b.log.Error("mark delivered", "id", o.Message.ID, "err", err)
+			} else {
+				b.emitMessage(StatusDelivered, o.Message, "", "")
 			}
 			continue
 		}
@@ -670,8 +692,13 @@ func (b *Bus) deliverDue(ctx context.Context) {
 		failed := attempts >= maxAttempts
 		next := time.Now().Add(min(time.Duration(1<<attempts)*time.Second, 5*time.Minute))
 		b.log.Warn("delivery failed", "id", o.Message.ID, "to", o.Agent.Name, "attempt", attempts, "gave_up", failed, "err", err)
-		if err := b.store.RecordFailure(ctx, o.Message.ID, err.Error(), next, failed); err != nil {
+		why := err.Error()
+		if err := b.store.RecordFailure(ctx, o.Message.ID, why, next, failed); err != nil {
 			b.log.Error("record failure", "id", o.Message.ID, "err", err)
+		} else if failed {
+			b.emitMessage(StatusFailed, o.Message, "", why)
+		} else {
+			b.emitMessage("retrying", o.Message, "", why)
 		}
 		if failed {
 			text := fmt.Sprintf("Your message %s to %s could not be delivered after %d attempts: %v", o.Message.ID, o.Agent.Name, attempts, err)

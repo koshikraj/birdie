@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -66,13 +67,50 @@ type Agent struct {
 	Name string `json:"name"`
 	// Description tells other agents what this agent is for. It is kept in
 	// Config["description"].
-	Description string            `json:"description,omitempty"`
-	TokenHash   string            `json:"-"`
-	Delivery    string            `json:"delivery"`
-	Config      map[string]string `json:"-"`
-	CreatedAt   time.Time         `json:"created_at"`
+	Description string `json:"description,omitempty"`
+	// Label is the agent's name for people, such as "Claude Code" for claude.
+	// It is kept in Config["label"]; see LabelOf.
+	Label     string            `json:"label,omitempty"`
+	TokenHash string            `json:"-"`
+	Delivery  string            `json:"delivery"`
+	Config    map[string]string `json:"-"`
+	CreatedAt time.Time         `json:"created_at"`
 	// Sessions lists the agent's running sessions, when it has any.
 	Sessions []Session `json:"sessions,omitempty"`
+}
+
+// defaultLabels names the agents birdie adds by default, for agents added
+// before birdie saved labels.
+var defaultLabels = map[string]string{
+	"claude":          "Claude Code",
+	"codex":           "Codex",
+	"grok-tui":        "Grok CLI",
+	"grok":            "Grok CLI (headless)",
+	"hermes":          "Hermes",
+	"hermes-headless": "Hermes (headless)",
+	"grok-bot":        "Grok Bot",
+	"me":              "You",
+}
+
+// LabelOf is an agent's name for people: the label saved with it, the label
+// of its default name, or else the name itself.
+func LabelOf(name string, config map[string]string) string {
+	if l := strings.TrimSpace(config["label"]); l != "" {
+		return l
+	}
+	if l, ok := defaultLabels[name]; ok {
+		return l
+	}
+	return name
+}
+
+// DisplayName is the agent's label, worked out from its name and config when
+// it wasn't loaded from the store.
+func (a Agent) DisplayName() string {
+	if a.Label != "" {
+		return a.Label
+	}
+	return LabelOf(a.Name, a.Config)
 }
 
 // Session is one running conversation of an agent, such as one open Claude

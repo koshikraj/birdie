@@ -158,19 +158,19 @@ func runChecks(ctx context.Context, db, url, home string, svc serviceManager) []
 		switch a.Delivery {
 		case bus.DeliveryPull:
 			if a.Name == botAgent {
-				add(checkWarn, "%s is waiting for its webhook URL and key; messages to it wait too. Run: birdie setup %s", a.Name, a.Name)
+				add(checkWarn, "%s is waiting for its webhook URL and key; messages to it wait too. Run: birdie setup %s", a.DisplayName(), a.Name)
 			}
 		case "webhook":
 			if msg := agentProblem(ctx, a, url, up); msg != "" {
-				add(checkFail, "%s: %s", a.Name, msg)
+				add(checkFail, "%s: %s", a.DisplayName(), msg)
 			} else {
-				add(checkOK, "%s delivers by webhook to %s; its routine can't be checked from here", a.Name, urlHost(a.Config["url"]))
+				add(checkOK, "%s delivers by webhook to %s; its routine can't be checked from here", a.DisplayName(), urlHost(a.Config["url"]))
 			}
 		case "acp":
 			if msg := agentProblem(ctx, a, url, up); msg != "" {
-				add(checkFail, "%s: %s", a.Name, msg)
+				add(checkFail, "%s: %s", a.DisplayName(), msg)
 			} else {
-				add(checkOK, "%s answers headlessly with `%s`", a.Name, a.Config["command"])
+				add(checkOK, "%s answers headlessly with `%s`", a.DisplayName(), a.Config["command"])
 			}
 		}
 	}

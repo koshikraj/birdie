@@ -33,11 +33,11 @@ func TestPrintThread(t *testing.T) {
 	printThread(&out, agents, msgs, false, time.Now())
 	text := out.String()
 	for _, want := range []string{
-		"2 messages between codex and claude",
-		"codex → claude\n",
+		"2 messages between Codex and Claude Code",
+		"Codex → Claude Code\n",
 		"Status: answered; delivered after ",
-		"s to claude/api\n",
-		"claude/api → codex",
+		"s to Claude Code · api\n",
+		"Claude Code · api → Codex",
 		"   second line",
 		"--full",
 	} {

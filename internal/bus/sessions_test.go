@@ -75,7 +75,7 @@ func TestNewConversationsGoToTheDefaultSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(m.Note, "claude/new gets this right away") {
+	if !strings.Contains(m.Note, "Claude Code · new gets this right away") {
 		t.Fatalf("note = %q", m.Note)
 	}
 	// A session that can't see it soon doesn't win just by being most recent.

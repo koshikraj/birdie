@@ -18,6 +18,19 @@ func sessionAddress(s bus.Session) string {
 	return s.Agent + "/" + s.ID
 }
 
+// sessionName is a session's name, or its id when it has none.
+func sessionName(s bus.Session) string {
+	if s.Name != "" {
+		return printable(s.Name, false)
+	}
+	return printable(s.ID, false)
+}
+
+// sessionLabel is how people read a session: "Claude Code · birdie".
+func sessionLabel(a bus.Agent, s bus.Session) string {
+	return printable(a.DisplayName(), false) + " · " + sessionName(s)
+}
+
 // sessionState says what a session is doing: busy, idle 12m or waiting 3m
 // when its agent says, live when it doesn't, and offline 20m once it stopped.
 func sessionState(s bus.Session, now time.Time) string {

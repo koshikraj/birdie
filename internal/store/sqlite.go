@@ -141,6 +141,7 @@ func scanAgent(r scanner) (bus.Agent, error) {
 		return a, err
 	}
 	a.Description = a.Config["description"]
+	a.Label = bus.LabelOf(a.Name, a.Config)
 	return a, nil
 }
 
