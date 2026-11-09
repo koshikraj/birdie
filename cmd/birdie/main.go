@@ -36,6 +36,7 @@ const usage = `birdie — two-way messaging between agents
 Usage:
   birdie serve [--addr 127.0.0.1:7777] [--db PATH] [--public-url URL] [--loop-limit 12]
   birdie onboard [--db PATH] [--url URL]
+  birdie status [--db PATH] [--url URL]
   birdie doctor [--db PATH] [--url URL]
   birdie setup claude|codex|grok|hermes|--all [--as NAME] [--remove] [--dry-run] [--wake]
   birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]
@@ -79,6 +80,8 @@ func main() {
 		err = runMCP(ctx, args)
 	case "onboard":
 		err = onboard(ctx, args)
+	case "status":
+		err = statusCmd(ctx, args)
 	case "thread":
 		err = threadCmd(ctx, args)
 	case "doctor":
