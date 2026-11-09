@@ -248,6 +248,20 @@ func (s *server) thread(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, err)
 		return
 	}
+	// Answers to you are delivered once you open their thread here.
+	for _, m := range msgs {
+		if m.To == Me && m.Status == bus.StatusQueued {
+			if _, err := s.Bus.ReceiveFor(ctx, bus.ReceiveInput{Agent: Me, Thread: id}); err != nil {
+				s.internal(w, err)
+				return
+			}
+			if msgs, err = s.Store.TrackThread(ctx, id); err != nil {
+				s.internal(w, err)
+				return
+			}
+			break
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "messages": s.currentLabels(r).tracks(msgs)})
 }
 

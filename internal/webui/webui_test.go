@@ -225,6 +225,17 @@ func TestSendShowsUpEverywhere(t *testing.T) {
 	if th.ID != sent.ThreadID || len(th.Messages) != 1 || th.Messages[0].FromLabel != webui.Me {
 		t.Fatalf("thread = %+v", th)
 	}
+	// An answer to you is delivered once you open its thread.
+	if _, err := r.b.Send(ctx, "bob", bus.SendInput{InReplyTo: sent.ID, Content: "hi back"}); err != nil {
+		t.Fatal(err)
+	}
+	var withAnswer struct {
+		Messages []struct{ To, Status string }
+	}
+	decode(t, r.do("GET", "/ui/api/threads/"+sent.ThreadID, "", nil), &withAnswer)
+	if n := len(withAnswer.Messages); n != 2 || withAnswer.Messages[1].To != webui.Me || withAnswer.Messages[1].Status != bus.StatusDelivered {
+		t.Fatalf("answer = %+v", withAnswer.Messages)
+	}
 	if resp := r.do("GET", "/ui/api/threads/nope", "", nil); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown thread: %s", resp.Status)
 	}
