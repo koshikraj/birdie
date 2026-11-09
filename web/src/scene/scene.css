@@ -1,0 +1,124 @@
+.scene {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  background: var(--stage);
+  color: var(--on-stage);
+  border-radius: var(--radius-md);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-family: var(--font-text);
+}
+.scene a { color: var(--on-stage); font-weight: 500; }
+.scene a:hover { color: var(--on-stage); text-decoration-thickness: 2px; }
+.scene .bd-signal { color: var(--on-stage); }
+
+.scene-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.scene-head h2 { margin: 0; }
+.scene-caption { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.scene-pause {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--on-stage);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.scene-pause:hover { background: var(--surface); color: var(--ink); }
+.scene-pause:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.scene-stage { position: relative; }
+.scene-route-chip {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 16px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 1;
+}
+.scene-svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+/* Routes: ink at full strength when lit, with the letter's fold color as a thin core. */
+.scene-route-base { stroke: var(--bird-line); stroke-width: 3; opacity: 0.25; }
+.scene-route-outer { stroke: var(--bird-line); stroke-width: 8; }
+.scene-route-core { stroke-width: 3; }
+.scene-ink { fill: var(--bird-line); }
+.scene-hub { fill: var(--surface); stroke: var(--bird-line); stroke-width: 2; }
+.scene-hub-name { font-family: var(--font-mono); font-size: 15px; font-weight: 500; fill: var(--on-stage); }
+.scene-name { font-family: var(--font-mono); font-size: 17px; font-weight: 500; fill: var(--on-stage); }
+.scene-detail { font-family: var(--font-mono); font-size: 13px; fill: var(--on-stage); }
+.scene-detail-problem { fill: var(--danger); }
+.scene-role { font-family: var(--font-mono); font-size: 14px; font-weight: 500; fill: var(--on-stage); }
+.scene-z { font-family: var(--font-display); font-size: 22px; font-weight: 800; fill: var(--on-stage); }
+.scene-letter { font-family: var(--font-mono); font-size: 34px; font-weight: 500; }
+.scene-terminal { fill: none; stroke: #FFFFFF; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+/* An agent whose deliveries fail is grey: inactive, but not asleep. */
+.scene-grey { filter: grayscale(1); opacity: 0.55; }
+
+.scene-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.scene-legend > span { display: flex; align-items: center; gap: 8px; }
+.scene-more { font-family: var(--font-mono); font-size: 13px; margin-left: auto; }
+.scene-calm { margin: 0; font-size: 15px; }
+
+.scene-empty { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4) 0; max-width: 560px; }
+.scene-empty-title { margin: 0; font-family: var(--font-display); font-size: 30px; line-height: 1.04; font-weight: 800; letter-spacing: -0.02em; }
+.scene-empty-text { margin: 0; font-size: 16px; line-height: 1.5; }
+
+/* Phone width: a list in place of the picture. */
+.scene-compact-now {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.scene-compact { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.scene-compact li {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  grid-template-areas: "tile name role" "tile detail role";
+  align-items: center;
+  column-gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.scene-compact li:first-child { border-top: 0; }
+.scene-compact li > .agent-tile { grid-area: tile; }
+.scene-compact li.is-grey > .agent-tile { filter: grayscale(1); opacity: 0.55; }
+.scene-compact-name { grid-area: name; font-family: var(--font-mono); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.scene-compact-detail { grid-area: detail; font-family: var(--font-mono); font-size: 12px; }
+.scene-compact-role { grid-area: role; font-family: var(--font-mono); font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); }
