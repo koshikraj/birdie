@@ -80,13 +80,34 @@ export function agentOf(label: string): string {
 }
 
 /** A label as you read it: anything of `me` is you. */
-export function who(label: string): string {
-  return agentOf(label) === ME ? 'you' : label;
+/** Each agent's label, from the overview. */
+const labels = new Map<string, string>();
+
+/** Remembers each agent's label, so the app can show it in place of its name. */
+export function learnLabels(agents: Agent[]) {
+  for (const a of agents) labels.set(a.name, a.label || a.name);
+}
+
+/** An agent's name for people, such as "Claude Code" for claude. */
+export function labelOf(agent: string): string {
+  return labels.get(agent) || (agent === ME ? 'You' : agent);
+}
+
+/** An address such as "claude/birdie", as people read it: "Claude Code · birdie". */
+export function who(address: string): string {
+  const i = address.indexOf('/');
+  if (i < 0) return labelOf(address);
+  return labelOf(address.slice(0, i)) + ' · ' + address.slice(i + 1);
 }
 
 /** How other agents address a session: agent/name. */
 export function sessionAddress(s: Session): string {
   return s.agent + '/' + (s.name || s.id.slice(0, 8));
+}
+
+/** A session as people read it: "Claude Code · birdie". */
+export function sessionWho(s: Session): string {
+  return who(sessionAddress(s));
 }
 
 export function liveSessions(a: Agent): Session[] {

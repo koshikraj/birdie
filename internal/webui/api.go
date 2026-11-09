@@ -34,6 +34,7 @@ type healthJSON struct {
 type agentJSON struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description,omitempty"`
+	Label       string        `json:"label"`
 	Delivery    string        `json:"delivery"`
 	CreatedAt   time.Time     `json:"created_at"`
 	Sessions    []sessionJSON `json:"sessions"`
@@ -162,7 +163,7 @@ func (s *server) overview(w http.ResponseWriter, r *http.Request) {
 		}
 		d := deliveries[a.Name]
 		aj := agentJSON{
-			Name: a.Name, Description: a.Description, Delivery: a.Delivery, CreatedAt: a.CreatedAt, Sessions: []sessionJSON{},
+			Name: a.Name, Description: a.Description, Label: a.Label, Delivery: a.Delivery, CreatedAt: a.CreatedAt, Sessions: []sessionJSON{},
 			Health: healthJSON{
 				Waiting: d.Waiting, Oldest: when(d.Oldest), Delivered: when(d.Delivered),
 				Error: d.Error, ErrorID: d.ErrorID, ErrorAt: when(d.ErrorAt), Retry: when(d.Retry), GaveUp: d.GaveUp,

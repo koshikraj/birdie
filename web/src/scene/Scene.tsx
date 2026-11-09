@@ -4,7 +4,7 @@ import { useBusEvent } from '../api/events';
 import { InstallCommand, Letter } from '../ds';
 import { Signal } from '../components/Signal';
 import { AgentTile } from '../components/AgentTile';
-import { agentsOf, identity, liveSessions, peersOf, who, type Identity } from '../lib/agents';
+import { agentsOf, identity, labelOf, liveSessions, peersOf, who, type Identity } from '../lib/agents';
 import { courier } from '../lib/courier';
 import { href } from '../lib/router';
 import { useMedia, useReducedMotion } from '../lib/media';
@@ -442,14 +442,14 @@ export function Scene({ overview, recent }: Props) {
   else if (noMessages) caption = 'No messages yet';
   else caption = 'Waiting for the next message';
 
-  const asleepNames = birds.filter((b) => b.shut).map((b) => b.pl.name);
-  const problemNames = birds.filter((b) => b.problem).map((b) => b.pl.name);
+  const asleepNames = birds.filter((b) => b.shut).map((b) => labelOf(b.pl.name));
+  const problemNames = birds.filter((b) => b.problem).map((b) => labelOf(b.pl.name));
   const sceneLabel =
     placed.length + (placed.length === 1 ? ' agent on a perch' : ' agents on perches') + ', joined to birdie.' +
     (m ? ' Now: ' + routeText + ', ' + clip(m.text) + '.' : noMessages ? ' No messages yet.' : '') +
     placed.map((p) => {
       const list = peers.get(p.name) || [];
-      return list.length ? ' ' + p.name + ' talks to ' + list.join(', ') + '.' : '';
+      return list.length ? ' ' + labelOf(p.name) + ' talks to ' + list.map(labelOf).join(', ') + '.' : '';
     }).join('') +
     asleepNames.map((n) => ' ' + n + ' is asleep.').join('') +
     problemNames.map((n) => ' ' + n + ' is not reachable.').join('');
@@ -494,7 +494,7 @@ export function Scene({ overview, recent }: Props) {
           {birds.map((b) => (
             <li key={b.pl.name} className={b.grey ? 'is-grey' : undefined}>
               <AgentTile name={b.pl.name} size={34} />
-              <a className="scene-compact-name" href={href.agent(b.pl.name)}>{b.pl.name}</a>
+              <a className="scene-compact-name" href={href.agent(b.pl.name)}>{labelOf(b.pl.name)}</a>
               <span className="scene-compact-detail">{b.detail}</span>
               {b.role && <span className="scene-compact-role">{b.role}</span>}
             </li>
@@ -602,7 +602,7 @@ export function Scene({ overview, recent }: Props) {
 
           {birds.map((b) => (
             <g key={'label-' + b.pl.name} className="scene-label" onClick={() => openAgent(b.pl.name)}>
-              <NameLabel x={b.pl.x} y={b.pl.y + 32} name={short(b.pl.name)} id={b.pl.id} clipId={clipId + '-mini'} />
+              <NameLabel x={b.pl.x} y={b.pl.y + 32} name={short(labelOf(b.pl.name), 20)} id={b.pl.id} clipId={clipId + '-mini'} />
               <text x={b.pl.x} y={b.pl.y + 52} textAnchor="middle" className={b.problem ? 'scene-detail scene-detail-problem' : 'scene-detail'}>{b.detail}</text>
               <text x={b.pl.x} y={b.pl.y + 74} textAnchor="middle" className="scene-role">{b.role}</text>
             </g>

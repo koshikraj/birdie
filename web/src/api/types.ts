@@ -47,6 +47,8 @@ export interface Health {
 export interface Agent {
   name: string;
   description?: string;
+  /** Its name for people, such as "Claude Code". The name itself when it has none. */
+  label: string;
   delivery: Delivery;
   created_at: string;
   /** Pull agents only: running sessions first (default marked), then ones that stopped in the last day. */

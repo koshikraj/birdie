@@ -2,6 +2,7 @@ import { QueryCache, QueryClient, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { connection } from '../lib/connection';
 import { ApiFailure, api } from './client';
+import { learnLabels } from '../lib/agents';
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache(),
@@ -30,6 +31,7 @@ export function useOverview() {
   useEffect(() => {
     if (address) connection.setAddress(address);
   }, [address]);
+  if (q.data) learnLabels(q.data.agents);
   return q;
 }
 

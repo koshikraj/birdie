@@ -27,14 +27,14 @@ export function progress(m: Tracked, kind: Delivery | undefined, now: number): s
     }
     case 'claimed':
       if (kind === 'acp') return 'being answered';
-      return m.taken_by ? 'taken by ' + m.taken_by + ', not confirmed yet' : 'taken, not confirmed yet';
+      return m.taken_by ? 'taken by ' + who(m.taken_by) + ', not confirmed yet' : 'taken, not confirmed yet';
     case 'delivered':
     case 'replied': {
       let s = m.status === 'replied' ? 'answered; delivered' : 'delivered';
       const d = ms(m.delivered_at);
       const c = ms(m.created_at);
       if (d !== null && c !== null) s += ' after ' + span(d - c);
-      if (m.taken_by) s += ' to ' + m.taken_by;
+      if (m.taken_by) s += ' to ' + who(m.taken_by);
       return s;
     }
     case 'failed':

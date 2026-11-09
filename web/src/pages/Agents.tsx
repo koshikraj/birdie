@@ -17,7 +17,9 @@ import {
   identity,
   liveSessions,
   peersOf,
+  labelOf,
   sessionAddress,
+  sessionWho,
   who,
 } from '../lib/agents';
 import { href } from '../lib/router';
@@ -162,14 +164,14 @@ function AgentCard({
         </div>
         <div className="agent-card-name">
           <div>
-            <h2 id={headingId}>{a.name}</h2>
+            <h2 id={headingId}>{a.label || a.name}</h2>
             <span className="chip chip-done">{deliveryLabel(a.delivery)}</span>
           </div>
           {description && <p className="agent-card-desc">{description}</p>}
         </div>
         {a.name !== me && (
           <button type="button" className="ghost-button" aria-pressed={picked} onClick={onPick}>
-            Message {a.name}
+            Message {a.label || a.name}
           </button>
         )}
       </div>
@@ -189,14 +191,14 @@ function AgentCard({
         </div>
         <div>
           <dt>Talks to</dt>
-          <dd>{peers.length ? peers.join(', ') : 'nobody today'}</dd>
+          <dd>{peers.length ? peers.map(labelOf).join(', ') : 'nobody today'}</dd>
         </div>
       </dl>
 
       {sessions.length > 0 && (
         <div className="sessions-table-wrap">
           <table className="sessions-table">
-            <caption className="visually-hidden">Sessions of {a.name}</caption>
+            <caption className="visually-hidden">Sessions of {a.label || a.name}</caption>
             <thead>
               <tr>
                 <th scope="col">Session</th>
@@ -209,7 +211,7 @@ function AgentCard({
               {sessions.map((s) => (
                 <tr key={s.id} className={s.live ? undefined : 'is-stopped'}>
                   <td>
-                    {sessionAddress(s)}
+                    {s.name || s.id.slice(0, 8)}
                     {s.default && s.live && <span className="muted"> · default</span>}
                   </td>
                   <td className="nowrap">
@@ -429,11 +431,11 @@ function targetsOf(o: Overview | undefined): Target[] {
   for (const a of agentsOf(o)) {
     if (a.name === o?.me) continue;
     const def = defaultSession(a);
-    out.push({ value: a.name, label: a.name + (def && liveSessions(a).length > 1 ? ' (its default session)' : '') });
+    out.push({ value: a.name, label: labelOf(a.name) + (def && liveSessions(a).length > 1 ? ' (its default session)' : '') });
     for (const s of liveSessions(a)) {
       // The bare name already reaches the default session.
       if (def && def.session.id === s.id) continue;
-      out.push({ value: sessionAddress(s), label: sessionAddress(s) });
+      out.push({ value: sessionAddress(s), label: sessionWho(s) });
     }
   }
   return out;
@@ -450,19 +452,19 @@ function resolve(o: Overview | undefined, to: string): string {
   if (sess) {
     const found = a.sessions.find((x) => sessionAddress(x) === to || x.id === sess || x.name === sess);
     if (found && found.live) {
-      s = 'Goes to ' + to + ', this session.';
+      s = 'Goes to ' + who(to) + ', this session.';
       waiting = found.state === 'waiting';
-    } else s = to + " isn't running, so it waits until that session comes back.";
+    } else s = who(to) + " isn't running, so it waits until that session comes back.";
   } else if (a.delivery === 'webhook') {
-    s = "Goes to " + name + "'s webhook.";
+    s = 'Goes to ' + labelOf(name) + "'s webhook.";
   } else if (a.delivery === 'acp') {
-    s = 'birdie starts ' + name + ' for it, waits for the answer and posts it back.';
+    s = 'birdie starts ' + labelOf(name) + ' for it, waits for the answer and posts it back.';
   } else {
     const def = defaultSession(a);
     if (def) {
-      s = 'Goes to ' + sessionAddress(def.session) + ', ' + def.why + '.';
+      s = 'Goes to ' + sessionWho(def.session) + ', ' + def.why + '.';
       waiting = def.session.state === 'waiting';
-    } else s = 'No session of ' + name + ' is running, so it waits until one starts.';
+    } else s = 'No session of ' + labelOf(name) + ' is running, so it waits until one starts.';
   }
   if (waiting) s += ' That session is waiting for your answer, so it sees this once you answer it.';
   if (a.health.error) s += ' Its deliveries are failing right now (' + errorText(a.health.error, 80) + '), so it may wait while birdie retries.';
@@ -514,7 +516,7 @@ function SendForm({
         text: input.content,
         at: Date.now(),
         phase: result.status,
-        toLabel: result.to_session ? sessionLabel(o, result.to, result.to_session) : result.to,
+        toLabel: result.to_session ? sessionLabel(o, result.to, result.to_session) : labelOf(result.to),
         deliveredAt: null,
         error: '',
         answeredBy: '',
@@ -535,7 +537,7 @@ function SendForm({
       const phase: Phase = e.type;
       setSent((s) => {
         if (!s || s.result.id !== e.id) return s;
-        const next = { ...s, toLabel: e.to_label || s.toLabel };
+        const next = { ...s, toLabel: e.to_label ? who(e.to_label) : s.toLabel };
         if (e.type === 'delivered' || e.type === 'replied') next.deliveredAt = next.deliveredAt ?? (ms(e.at) || Date.now());
         if (e.error) next.error = e.error;
         if (RANK[phase] >= RANK[s.phase] || (s.phase === 'retrying' && phase !== 'queued')) next.phase = phase;
@@ -573,7 +575,7 @@ function SendForm({
   let detail = '';
   let problem = false;
   if (sent) {
-    const where = tracked?.taken_by || sent.toLabel;
+    const where = tracked?.taken_by ? who(tracked.taken_by) : sent.toLabel;
     const deliveredAt = ms(tracked?.delivered_at) ?? sent.deliveredAt;
     const createdAt = ms(tracked?.created_at) ?? sent.at;
     const error = tracked?.error || sent.error;
@@ -614,7 +616,7 @@ function SendForm({
       <div className="send-head">
         <h2 id="send-title" className="title">Send a message</h2>
         <p>
-          You send as <span className="mono">{o?.me || 'me'}</span>. Answers come back to Messages.
+          You send as yourself. Answers come back to Messages.
         </p>
       </div>
       <form onSubmit={submit} noValidate className="send-form">
@@ -691,5 +693,5 @@ function SendForm({
 function sessionLabel(o: Overview | undefined, agent: string, session: string): string {
   const a = findAgent(o, agent);
   const s = a?.sessions.find((x) => x.id === session || x.name === session);
-  return s ? sessionAddress(s) : agent + '/' + session.slice(0, 8);
+  return who(s ? sessionAddress(s) : agent + '/' + session.slice(0, 8));
 }

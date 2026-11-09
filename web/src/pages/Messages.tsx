@@ -149,14 +149,14 @@ function ProblemNote({ m }: { m: Tracked }) {
   if (m.status === 'failed') {
     return (
       <div className="thread-problem">
-        <span className="error-label">Error:</span> birdie gave up on the message to <span className="mono">{m.to_label}</span> after {m.attempts}{' '}
+        <span className="error-label">Error:</span> birdie gave up on the message to <strong>{who(m.to_label)}</strong> after {m.attempts}{' '}
         {m.attempts === 1 ? 'try' : 'tries'}: {errorText(m.error)}. The sender was told.
       </div>
     );
   }
   return (
     <div className="thread-problem">
-      <span className="error-label">Error:</span> the last try to reach <span className="mono">{m.to_label}</span> failed: {errorText(m.error)}. birdie keeps
+      <span className="error-label">Error:</span> the last try to reach <strong>{who(m.to_label)}</strong> failed: {errorText(m.error)}. birdie keeps
       trying, and tells the sender if it gives up after {MAX_TRIES} tries.
     </div>
   );

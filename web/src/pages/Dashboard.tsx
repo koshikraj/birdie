@@ -6,7 +6,7 @@ import { CourierFlight, type Run } from '../components/CourierFlight';
 import { useBusEvent } from '../api/events';
 import { courier } from '../lib/courier';
 import { SessionStateMark, StatusChip } from '../components/bits';
-import { agentOf, agentsOf, identity, liveSessions, sessionAddress, who } from '../lib/agents';
+import { agentOf, agentsOf, identity, labelOf, liveSessions, sessionAddress, sessionWho, who } from '../lib/agents';
 import { href } from '../lib/router';
 import { MAX_TRIES, errorText, messageChip } from '../lib/status';
 import { ago, agoWords, until, useNow } from '../lib/time';
@@ -63,7 +63,7 @@ function Attention({ overview, now }: { overview: Overview; now: number }) {
         <div key={session.id} className="attention-row">
           <span className="chip chip-attention">Needs your answer</span>
           <p>
-            <span className="mono">{sessionAddress(session)}</span> stopped to ask you something {agoWords(session.active_at, now)}. Answer it in{' '}
+            <strong>{sessionWho(session)}</strong> stopped to ask you something {agoWords(session.active_at, now)}. Answer it in{' '}
             {identity(agent.name).product}, and its messages carry on.
           </p>
         </div>
@@ -75,7 +75,7 @@ function Attention({ overview, now }: { overview: Overview; now: number }) {
           <div key={a.name} className="attention-row">
             <span className="chip chip-delivery">Delivery problem</span>
             <p>
-              <span className="error-label">Error:</span> the last delivery to <span className="mono">{a.name}</span> failed {agoWords(h.error_at, now)}:{' '}
+              <span className="error-label">Error:</span> the last delivery to <strong>{a.label || a.name}</strong> failed {agoWords(h.error_at, now)}:{' '}
               {errorText(h.error)}.{' '}
               {h.retry
                 ? (retry === 'now' ? 'The next try is due now.' : 'Next try ' + retry + '.') + ' birdie gives up after ' + MAX_TRIES + ' tries.'
@@ -97,7 +97,7 @@ function Stats({ overview, now }: { overview: Overview; now: number }) {
   const sessions = agents.flatMap(liveSessions);
   const needYou = sessions.filter((s) => s.state === 'waiting').length;
   const busy = sessions.filter((s) => s.state === 'busy').length;
-  const queuedFor = agents.filter((a) => a.health.waiting > 0).map((a) => a.name + ' ' + a.health.waiting);
+  const queuedFor = agents.filter((a) => a.health.waiting > 0).map((a) => (a.label || a.name) + ' ' + a.health.waiting);
   const tiles: { label: string; value: number; sub: string; extra?: ReactNode; href?: string }[] = [
     {
       label: 'Agents',
@@ -150,7 +150,7 @@ function Stack({ names }: { names: string[] }) {
   const shown = names.slice(0, MAX);
   const more = names.length - shown.length;
   return (
-    <span className="tile-stack" title={names.join(', ')}>
+    <span className="tile-stack" title={names.map(labelOf).join(', ')}>
       {shown.map((n) => (
         <AgentTile key={n} name={n} size={30} ring />
       ))}
@@ -329,7 +329,7 @@ function Sessions({ overview, now }: { overview: Overview; now: number }) {
       {sessions.map((s) => (
         <div key={s.agent + '/' + s.id} className="session-row">
           <span className="session-name">
-            {sessionAddress(s)}
+            {sessionWho(s)}
             {s.default && <span className="muted"> · default</span>}
           </span>
           <span className="session-state">
