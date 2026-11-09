@@ -40,11 +40,6 @@ a:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-visi
 .skip-link { position: absolute; left: 16px; top: -60px; z-index: 10; padding: 10px 14px; background: var(--action); color: var(--on-action); font-family: var(--font-mono); font-size: 13px; border-radius: var(--radius-sm); }
 .skip-link:focus { top: 8px; color: var(--on-action); }
 
-@keyframes app-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.7); } }
-.dot-live { animation: app-pulse 1.4s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .dot-live, .signal-live .signal-dot, .signal-live .signal-dash { animation: none; }
-  * { transition: none !important; }
 /* The loader: the logo's dot and upright dash, blinking in turn. */
 .signal { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 13px; line-height: 1.25; color: var(--ink); }
 .signal-mark { flex: none; display: block; overflow: visible; }
@@ -54,6 +49,11 @@ a:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-visi
 .signal-live .signal-dash { animation: signal-blink 1.2s ease-in-out 0.3s infinite; }
 @keyframes signal-blink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.82); } }
 
+@keyframes app-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.7); } }
+.dot-live { animation: app-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .dot-live, .signal-live .signal-dot, .signal-live .signal-dash { animation: none; }
+  * { transition: none !important; }
 }
 
 /* Shell */
@@ -67,7 +67,45 @@ a:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-visi
   background: var(--surface);
   border-bottom: 1px solid var(--divider);
 }
-.app-logo { display: flex; align-items: center; text-decoration: none; border-radius: var(--radius-sm); }
+.app-logo { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--ink); border-radius: var(--radius-sm); }
+.app-logo:hover { color: var(--ink); }
+.app-logo-word { font-family: var(--font-display); font-size: 28px; line-height: 1; font-weight: 800; letter-spacing: -0.04em; }
+
+.app-header-end { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+/* Short on room, the status keeps its mark and reads its words to screen readers only. */
+@media (max-width: 1240px) {
+  .app-status .signal-text { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+.theme-toggle { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--radius-full); background: var(--ground); }
+.theme-toggle button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border: 0; border-radius: var(--radius-full);
+  background: transparent; color: var(--ink-muted); cursor: pointer;
+}
+.theme-toggle button:hover { color: var(--ink); }
+.theme-toggle button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.theme-toggle svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.you-menu { position: relative; }
+.you-button { display: block; padding: 0; border: 0; background: transparent; border-radius: 12px; cursor: pointer; }
+.you-button:hover .agent-tile { transform: translateY(-1px); }
+.you-button .agent-tile { transition: transform 0.15s ease; }
+.you-pop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 20;
+  min-width: 240px; padding: 8px;
+  background: var(--surface); border: 1px solid var(--divider); border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.16);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.you-pop-head { display: flex; align-items: center; gap: 12px; padding: 8px 8px 12px; border-bottom: 1px solid var(--divider); }
+.you-pop-head strong { display: block; font-family: var(--font-display); font-size: 17px; }
+.you-pop-head span { display: block; font-size: 13px; color: var(--ink-muted); }
+.you-pop-item {
+  min-height: 40px; padding: 0 10px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--ink); text-align: left;
+  font-family: var(--font-mono); font-size: 13px; cursor: pointer;
+}
+.you-pop-item:hover { background: var(--ground); }
 .app-nav { display: flex; flex-wrap: wrap; gap: 4px; }
 .app-nav a {
   font-family: var(--font-mono);

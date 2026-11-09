@@ -15,12 +15,3 @@ export function useMedia(query: string): boolean {
 }
 
 export const useReducedMotion = () => useMedia('(prefers-reduced-motion: reduce)');
-
-/** Follows the system's light or dark setting by setting data-theme on the root. */
-export function followColorScheme() {
-  const root = document.documentElement;
-  const mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-  const apply = () => root.setAttribute('data-theme', mq && mq.matches ? 'dark' : 'light');
-  apply();
-  mq?.addEventListener('change', apply);
-}

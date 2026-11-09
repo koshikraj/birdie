@@ -9,9 +9,9 @@ import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './api/hooks';
 import { App } from './App';
-import { followColorScheme } from './lib/media';
+import { startTheme } from './lib/theme';
 
-followColorScheme();
+startTheme();
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
