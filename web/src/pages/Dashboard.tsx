@@ -95,11 +95,13 @@ function Stats({ overview, now }: { overview: Overview; now: number }) {
   const needYou = sessions.filter((s) => s.state === 'waiting').length;
   const busy = sessions.filter((s) => s.state === 'busy').length;
   const queuedFor = agents.filter((a) => a.health.waiting > 0).map((a) => a.name + ' ' + a.health.waiting);
-  const tiles: { label: string; value: number; sub: string; extra?: ReactNode }[] = [
+  const tiles: { label: string; value: number; sub: string; extra?: ReactNode; href?: string }[] = [
     {
       label: 'Agents',
       value: agents.length,
-      extra: running.length ? <Stack names={running.map((a) => a.name)} /> : undefined,
+      href: href.agents,
+      // Agents with sessions running first.
+      extra: agents.length ? <Stack names={[...running, ...agents.filter((a) => !running.includes(a))].map((a) => a.name)} /> : undefined,
       sub: withSessions === 1 ? '1 has sessions running' : withSessions + ' have sessions running',
     },
     {
@@ -110,6 +112,7 @@ function Stats({ overview, now }: { overview: Overview; now: number }) {
     {
       label: 'Messages today',
       value: overview.today.sent,
+      href: href.messages,
       sub: overview.today.last_at ? 'Last one ' + ago(overview.today.last_at, now) : 'None yet',
     },
     {
@@ -122,8 +125,8 @@ function Stats({ overview, now }: { overview: Overview; now: number }) {
     <section aria-label="Today">
       <dl className="stats">
         {tiles.map((t) => (
-          <div key={t.label} className="stat">
-            <dt>{t.label}</dt>
+          <div key={t.label} className={'stat' + (t.href ? ' stat-linked' : '')}>
+            <dt>{t.href ? <a href={t.href} className="stat-link">{t.label}</a> : t.label}</dt>
             <dd>
               <span className="stat-value-row">
                 <span className="stat-value">{t.value}</span>
@@ -138,13 +141,13 @@ function Stats({ overview, now }: { overview: Overview; now: number }) {
   );
 }
 
-/** Overlapping icons of the agents that have sessions running. */
+/** Overlapping icons of the first few agents, and how many more there are. */
 function Stack({ names }: { names: string[] }) {
-  const MAX = 5;
+  const MAX = 3;
   const shown = names.slice(0, MAX);
   const more = names.length - shown.length;
   return (
-    <span className="tile-stack" title={names.join(', ') + (names.length === 1 ? ' has' : ' have') + ' sessions running'}>
+    <span className="tile-stack" title={names.join(', ')}>
       {shown.map((n) => (
         <AgentTile key={n} name={n} size={30} ring />
       ))}
