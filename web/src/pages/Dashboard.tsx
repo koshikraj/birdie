@@ -11,7 +11,9 @@ import { href } from '../lib/router';
 import { MAX_TRIES, errorText, messageChip } from '../lib/status';
 import { ago, agoWords, until, useNow } from '../lib/time';
 import { Scene } from '../scene/Scene';
-import { Signal } from '../components/Signal';
+import { Loading, Skeleton } from '../components/Signal';
+import { Scroller } from '../components/Scroller';
+import { TilePair } from '../components/TilePair';
 
 export function DashboardPage() {
   const overview = useOverview();
@@ -164,6 +166,7 @@ const HOLD_MAX = 15000;
 
 function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loading: boolean; failed: boolean; now: number }) {
   const box = useRef<HTMLElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   // New messages wait here while the live scene plays their letter.
   const [held, setHeld] = useState<ReadonlySet<string>>(() => new Set());
   const heldRef = useRef(held);
@@ -211,6 +214,7 @@ function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loadin
       courier.onPass((p) => {
         if (!heldRef.current.has(p.id)) return;
         window.clearTimeout(timers.current.get(p.id));
+        scroller.current?.scrollTo({ top: 0, behavior: 'smooth' });
         setRuns((r) => [
           ...r,
           {
@@ -218,7 +222,7 @@ function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loadin
             from: p.from,
             to: p.to,
             start: { x: p.rect.left + p.rect.width / 2, y: p.rect.top + p.rect.height / 2 },
-            land: () => landing(box.current),
+            land: () => landing(box.current, scroller.current),
           },
         ]);
       }),
@@ -226,7 +230,7 @@ function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loadin
   );
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
 
-  const shown = (messages ?? []).filter((m) => !held.has(m.id)).slice(0, 6);
+  const shown = (messages ?? []).filter((m) => !held.has(m.id));
   return (
     <section ref={box} aria-labelledby="feed-title" className="panel feed">
       <div className="panel-head">
@@ -235,20 +239,21 @@ function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loadin
       </div>
       {!shown.length ? (
         loading ? (
-          <div className="panel-empty"><Signal label="Loading messages" /></div>
+          <div className="panel-empty">
+            <Loading label="Loading messages" />
+            <Skeleton rows={3} />
+          </div>
         ) : (
           <p className="panel-empty">{failed ? "Messages can't load until birdie is reachable." : 'No messages yet. Send one from Agents, or ask one agent to message another.'}</p>
         )
       ) : (
+        <Scroller ref={scroller} rows={4} label="Live messages" className="feed-scroll">
         <ol>
           {shown.map((m) => {
             const how = entering.get(m.id);
             return (
               <li key={m.id} className={how ? 'feed-' + how : undefined}>
-                <div className="tile-pair">
-                  <AgentTile name={agentOf(m.from)} size={34} ring />
-                  <AgentTile name={agentOf(m.to)} size={34} ring />
-                </div>
+                <TilePair a={agentOf(m.from)} b={agentOf(m.to)} size={34} />
                 <div className="feed-body">
                   <div className="feed-meta">
                     <a className="feed-route" href={href.thread(m.thread_id || m.id)}>
@@ -263,6 +268,7 @@ function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loadin
             );
           })}
         </ol>
+        </Scroller>
       )}
       {runs.map((r) => (
         <CourierFlight
@@ -280,9 +286,8 @@ function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loadin
 }
 
 /** Where the newest card's first icon goes: the top of the list, under the heading when it's empty. */
-function landing(feed: HTMLElement | null): { x: number; y: number } {
+function landing(feed: HTMLElement | null, list: HTMLElement | null): { x: number; y: number } {
   if (!feed) return { x: window.innerWidth - 80, y: 80 };
-  const list = feed.querySelector('ol');
   const head = feed.querySelector('.panel-head');
   const top = list ? list.getBoundingClientRect().top : (head?.getBoundingClientRect().bottom ?? feed.getBoundingClientRect().top);
   const left = (list ?? head ?? feed).getBoundingClientRect().left;
@@ -298,10 +303,7 @@ function Pairs({ overview }: { overview: Overview }) {
       {!list.length && <p className="panel-empty">No agents have talked to each other yet today.</p>}
       {list.map((p) => (
         <div key={p.a + '|' + p.b} className="pairs-row">
-          <div className="tile-pair">
-            <AgentTile name={p.a} size={30} ring />
-            <AgentTile name={p.b} size={30} ring />
-          </div>
+          <TilePair a={p.a} b={p.b} size={30} />
           <span className="pairs-label">{who(p.a)} ⇄ {who(p.b)}</span>
           <div className="pairs-bar" aria-hidden="true">
             <span style={{ width: Math.round((p.count / most) * 100) + '%' }} />
