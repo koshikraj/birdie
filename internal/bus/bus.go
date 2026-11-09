@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 const (
@@ -23,8 +24,9 @@ const (
 
 	// SessionTTL is how long a session counts as running after it last
 	// reported. Sessions report every SessionBeat.
-	SessionTTL  = 90 * time.Second
-	SessionBeat = 30 * time.Second
+	SessionTTL     = 90 * time.Second
+	SessionBeat    = 30 * time.Second
+	maxBranchBytes = 255
 
 	// DefaultLoopLimit messages from one agent to another within LoopWindow
 	// probably means they are stuck answering each other.
@@ -156,8 +158,18 @@ func (b *Bus) ReportSession(ctx context.Context, agent, id string, in SessionInp
 	default:
 		return fmt.Errorf("%w: bad tier %q", ErrInvalid, in.Tier)
 	}
+	// What a session says about itself only informs people, so anything this
+	// version can't use is dropped rather than refused.
+	switch in.State {
+	case StateBusy, StateIdle, StateWaiting:
+	default:
+		in.State = ""
+	}
+	if len(in.Branch) > maxBranchBytes || strings.ContainsFunc(in.Branch, unicode.IsControl) {
+		in.Branch = ""
+	}
 	now := time.Now().UTC()
-	s := Session{ID: id, Agent: agent, Name: in.Name, Cwd: in.Cwd, Tier: in.Tier, ActiveAt: in.ActiveAt, LastSeen: now}
+	s := Session{ID: id, Agent: agent, Name: in.Name, Cwd: in.Cwd, Branch: in.Branch, Tier: in.Tier, State: in.State, ActiveAt: in.ActiveAt, LastSeen: now}
 	if s.ActiveAt.IsZero() || s.ActiveAt.After(now) {
 		s.ActiveAt = now
 	}

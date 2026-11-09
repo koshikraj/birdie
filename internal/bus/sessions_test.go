@@ -136,6 +136,35 @@ func TestAnswersGoBackToTheSessionThatAsked(t *testing.T) {
 	}
 }
 
+func TestSessionsSayWhatTheyAreDoing(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	addAgent(t, st, "claude", nil)
+	for id, in := range map[string]bus.SessionInput{
+		"s1": {Name: "api", State: bus.StateWaiting, Branch: "fix/login"},
+		"s2": {Name: "web", State: "dreaming", Branch: "bad\x1b[31m"},
+	} {
+		if err := b.ReportSession(ctx, "claude", id, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	agents, err := b.Agents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bus.Session{}
+	for _, s := range agents[0].Sessions {
+		got[s.ID] = s
+	}
+	if s := got["s1"]; s.State != bus.StateWaiting || s.Branch != "fix/login" {
+		t.Fatalf("s1 = %+v", s)
+	}
+	// What this version can't use is dropped, not refused.
+	if s := got["s2"]; s.State != "" || s.Branch != "" {
+		t.Fatalf("s2 = %+v", s)
+	}
+}
+
 func TestAddressingOneSession(t *testing.T) {
 	ctx := context.Background()
 	b, st := newBus(t)

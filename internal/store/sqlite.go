@@ -64,14 +64,17 @@ var addedColumns = []struct{ table, column, def string }{
 	{"messages", "from_session", "TEXT NOT NULL DEFAULT ''"},
 	{"messages", "to_session", "TEXT NOT NULL DEFAULT ''"},
 	{"messages", "lease_until", "INTEGER NOT NULL DEFAULT 0"},
+	{"sessions", "branch", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "state", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // sessionRetention is how long a session that stopped reporting is remembered.
 const sessionRetention = 24 * time.Hour
 
 const (
-	msgCols   = `m.id, m.thread_id, m.in_reply_to, m.sender, m.recipient, m.from_session, m.to_session, m.content, m.meta, m.status, m.attempts, m.created_at`
-	agentCols = `a.name, a.token_hash, a.delivery, a.config, a.created_at`
+	msgCols     = `m.id, m.thread_id, m.in_reply_to, m.sender, m.recipient, m.from_session, m.to_session, m.content, m.meta, m.status, m.attempts, m.created_at`
+	agentCols   = `a.name, a.token_hash, a.delivery, a.config, a.created_at`
+	sessionCols = `agent, id, name, cwd, branch, tier, state, active_at, last_seen`
 )
 
 type SQLite struct{ db *sql.DB }
@@ -396,10 +399,10 @@ func (s *SQLite) UpsertSession(ctx context.Context, ses bus.Session) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE last_seen < ?`, ses.LastSeen.Add(-sessionRetention).UnixMilli()); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions (agent, id, name, cwd, tier, active_at, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(agent, id) DO UPDATE SET name = excluded.name, cwd = excluded.cwd, tier = excluded.tier,
-			active_at = MAX(active_at, excluded.active_at), last_seen = excluded.last_seen`,
-		ses.Agent, ses.ID, ses.Name, ses.Cwd, ses.Tier, ses.ActiveAt.UnixMilli(), ses.LastSeen.UnixMilli())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions (agent, id, name, cwd, branch, tier, state, active_at, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(agent, id) DO UPDATE SET name = excluded.name, cwd = excluded.cwd, branch = excluded.branch, tier = excluded.tier,
+			state = excluded.state, active_at = MAX(active_at, excluded.active_at), last_seen = excluded.last_seen`,
+		ses.Agent, ses.ID, ses.Name, ses.Cwd, ses.Branch, ses.Tier, ses.State, ses.ActiveAt.UnixMilli(), ses.LastSeen.UnixMilli())
 	return err
 }
 
@@ -409,7 +412,7 @@ func (s *SQLite) DeleteSession(ctx context.Context, agent, id string) error {
 }
 
 func (s *SQLite) LiveSessions(ctx context.Context, agent string, since time.Time) ([]bus.Session, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT agent, id, name, cwd, tier, active_at, last_seen FROM sessions
+	rows, err := s.db.QueryContext(ctx, `SELECT `+sessionCols+` FROM sessions
 		WHERE agent = ? AND last_seen >= ? ORDER BY active_at DESC, id`, agent, since.UnixMilli())
 	if err != nil {
 		return nil, err
@@ -419,7 +422,7 @@ func (s *SQLite) LiveSessions(ctx context.Context, agent string, since time.Time
 	for rows.Next() {
 		var ses bus.Session
 		var active, seen int64
-		if err := rows.Scan(&ses.Agent, &ses.ID, &ses.Name, &ses.Cwd, &ses.Tier, &active, &seen); err != nil {
+		if err := rows.Scan(&ses.Agent, &ses.ID, &ses.Name, &ses.Cwd, &ses.Branch, &ses.Tier, &ses.State, &active, &seen); err != nil {
 			return nil, err
 		}
 		ses.ActiveAt, ses.LastSeen = time.UnixMilli(active).UTC(), time.UnixMilli(seen).UTC()

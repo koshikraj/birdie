@@ -45,6 +45,12 @@ const (
 	TierPush = "push" // at once, even if idle
 	TierTurn = "turn" // at its next tool call or end of turn
 	TierPull = "pull" // only when it checks
+
+	// What a session is doing, when its agent says. Most agents don't, and
+	// their sessions have no state.
+	StateBusy    = "busy"    // working on a turn
+	StateIdle    = "idle"    // finished, until its user types again
+	StateWaiting = "waiting" // stopped mid-turn until its user answers, as at a permission prompt
 )
 
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -77,10 +83,17 @@ type Session struct {
 	// Name is how other agents address it: agent/name.
 	Name string `json:"name,omitempty"`
 	Cwd  string `json:"cwd,omitempty"`
-	Tier string `json:"tier"`
+	// Branch is the git branch checked out in Cwd, or the commit when no
+	// branch is.
+	Branch string `json:"branch,omitempty"`
+	Tier   string `json:"tier"`
+	// State is StateBusy, StateIdle or StateWaiting, or empty when its agent
+	// doesn't say.
+	State string `json:"state,omitempty"`
 	// Default marks the session that takes new conversations.
 	Default bool `json:"default,omitempty"`
-	// ActiveAt is when its user or model last did something.
+	// ActiveAt is when its user or model last did something. While it is idle
+	// or waiting, that is when it stopped.
 	ActiveAt time.Time `json:"active_at"`
 	LastSeen time.Time `json:"last_seen"`
 }
@@ -89,7 +102,9 @@ type Session struct {
 type SessionInput struct {
 	Name     string    `json:"name,omitempty"`
 	Cwd      string    `json:"cwd,omitempty"`
+	Branch   string    `json:"branch,omitempty"`
 	Tier     string    `json:"tier,omitempty"`
+	State    string    `json:"state,omitempty"`
 	ActiveAt time.Time `json:"active_at,omitzero"`
 }
 

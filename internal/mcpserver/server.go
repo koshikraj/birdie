@@ -268,7 +268,9 @@ func (s *Server) syncSession(ctx context.Context, h Host) {
 			}
 		}
 	}
-	err := s.c.ReportSession(ctx, info.ID, bus.SessionInput{Name: info.Name, Cwd: info.Cwd, Tier: s.tier(), ActiveAt: info.ActiveAt})
+	err := s.c.ReportSession(ctx, info.ID, bus.SessionInput{
+		Name: info.Name, Cwd: info.Cwd, Branch: gitBranch(info.Cwd), Tier: s.tier(), State: info.State, ActiveAt: info.ActiveAt,
+	})
 	if err != nil && ctx.Err() == nil {
 		s.log.Printf("report session: %v", err)
 	}
