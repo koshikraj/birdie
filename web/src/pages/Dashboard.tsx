@@ -8,6 +8,7 @@ import { href } from '../lib/router';
 import { MAX_TRIES, errorText, messageChip } from '../lib/status';
 import { ago, agoWords, until, useNow } from '../lib/time';
 import { Scene } from '../scene/Scene';
+import { Signal } from '../components/Signal';
 
 export function DashboardPage() {
   const overview = useOverview();
@@ -141,7 +142,11 @@ function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loadin
         <a href={href.messages} className="panel-link">All messages</a>
       </div>
       {!shown.length ? (
-        <p className="panel-empty">{loading ? 'Loading messages.' : failed ? "Messages can't load until birdie is reachable." : 'No messages yet. Send one from Agents, or ask one agent to message another.'}</p>
+        loading ? (
+          <div className="panel-empty"><Signal label="Loading messages" /></div>
+        ) : (
+          <p className="panel-empty">{failed ? "Messages can't load until birdie is reachable." : 'No messages yet. Send one from Agents, or ask one agent to message another.'}</p>
+        )
       ) : (
         <ol>
           {shown.map((m) => (

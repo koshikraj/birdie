@@ -23,6 +23,7 @@ import { href } from '../lib/router';
 import { errorText } from '../lib/status';
 import { ago, ms, span, until, useNow } from '../lib/time';
 
+import { Signal } from '../components/Signal';
 export function AgentsPage({ section }: { section?: 'send' | 'add' }) {
   const overview = useOverview();
   const o = overview.data;
@@ -65,7 +66,7 @@ export function AgentsPage({ section }: { section?: 'send' | 'add' }) {
 
       <div className="row-wrap row-wrap-top">
         <div className="agents-list">
-          {!o && <p className="panel">{overview.isError ? String(overview.error.message) : 'Loading agents.'}</p>}
+          {!o && (overview.isError ? <p className="panel">{String(overview.error.message)}</p> : <div className="panel"><Signal label="Loading agents" /></div>)}
           {o && !agents.length && (
             <div className="panel">
               <h2 className="panel-title">No agents yet</h2>

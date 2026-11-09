@@ -10,6 +10,7 @@ import { useRoute } from './lib/router';
 import { AgentsPage } from './pages/Agents';
 import { DashboardPage } from './pages/Dashboard';
 import { MessagesPage } from './pages/Messages';
+import { Signal } from './components/Signal';
 
 /**
  * `birdie ui` opens /ui/#login=CODE. The code is swapped for a cookie, and
@@ -68,7 +69,7 @@ export function App() {
     return (
       <CenterPage>
         <Logo variant="lockup" size={40} />
-        <p role="status">Connecting to birdie.</p>
+        <Signal label="Connecting to birdie" />
       </CenterPage>
     );
   }

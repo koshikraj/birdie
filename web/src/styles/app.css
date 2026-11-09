@@ -38,8 +38,17 @@ a:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-visi
 @keyframes app-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.7); } }
 .dot-live { animation: app-pulse 1.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .dot-live { animation: none; }
+  .dot-live, .signal-live .signal-dot, .signal-live .signal-dash { animation: none; }
   * { transition: none !important; }
+/* The loader: the logo's dot and upright dash, blinking in turn. */
+.signal { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 13px; line-height: 1.25; color: var(--ink); }
+.signal-mark { flex: none; display: block; overflow: visible; }
+.signal-dot { fill: var(--signal); transform-box: fill-box; transform-origin: center; }
+.signal-dash { fill: var(--bird-dash); transform-box: fill-box; transform-origin: center bottom; }
+.signal-live .signal-dot { animation: signal-blink 1.2s ease-in-out infinite; }
+.signal-live .signal-dash { animation: signal-blink 1.2s ease-in-out 0.3s infinite; }
+@keyframes signal-blink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.82); } }
+
 }
 
 /* Shell */

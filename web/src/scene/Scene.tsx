@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Agent, Overview, Tracked } from '../api/types';
 import { useBusEvent } from '../api/events';
-import { InstallCommand, Letter, StatusSignal } from '../ds';
+import { InstallCommand, Letter } from '../ds';
+import { Signal } from '../components/Signal';
 import { AgentTile } from '../components/AgentTile';
 import { agentsOf, identity, liveSessions, peersOf, type Identity } from '../lib/agents';
 import { href } from '../lib/router';
@@ -294,7 +295,7 @@ export function Scene({ overview, recent }: Props) {
         <div className="scene-head">
           <h2 id="live-title" className="title">Live</h2>
         </div>
-        <p className="scene-empty-text">Connecting to birdie.</p>
+        <p className="scene-empty-text"><Signal label="Connecting to birdie" /></p>
       </section>
     );
   }
@@ -452,7 +453,7 @@ export function Scene({ overview, recent }: Props) {
     <div className="scene-head">
       <h2 id="live-title" className="title">Live</h2>
       <div className="scene-caption">
-        <StatusSignal label={caption} live={moving} />
+        <Signal label={caption} live={moving} />
       </div>
       {!reduce && (
         <button className="scene-pause" type="button" aria-pressed={paused} onClick={() => setPaused((v) => !v)}>

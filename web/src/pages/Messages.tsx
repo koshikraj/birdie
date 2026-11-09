@@ -8,6 +8,7 @@ import { agentOf } from '../lib/agents';
 import { href } from '../lib/router';
 import { MAX_TRIES, errorText, progress, threadChip, troubled } from '../lib/status';
 import { ago, clock, useNow } from '../lib/time';
+import { Signal } from '../components/Signal';
 
 export function MessagesPage({ id }: { id?: string }) {
   const threads = useThreads();
@@ -27,9 +28,12 @@ export function MessagesPage({ id }: { id?: string }) {
       <div className="row-wrap row-wrap-top">
         <section aria-labelledby="threads-title" className="panel threads">
           <h2 id="threads-title" className="panel-title">Threads</h2>
-          {!list.length && (
-            <p className="panel-empty">{threads.isError ? "Threads can't load until birdie is reachable." : threads.isPending ? 'Loading threads.' : 'No messages yet. Send one from Agents, and its thread shows up here.'}</p>
-          )}
+          {!list.length &&
+            (threads.isPending && !threads.isError ? (
+              <div className="panel-empty"><Signal label="Loading threads" /></div>
+            ) : (
+              <p className="panel-empty">{threads.isError ? "Threads can't load until birdie is reachable." : 'No messages yet. Send one from Agents, and its thread shows up here.'}</p>
+            ))}
           {list.map((t) => {
             const on = t.id === threadId;
             return (
@@ -101,7 +105,8 @@ function ThreadDetail({
   if (!data) {
     return (
       <section aria-labelledby="thread-title" className="panel thread" aria-busy="true">
-        <h2 id="thread-title" className="panel-title">Loading the thread</h2>
+        <h2 id="thread-title" className="visually-hidden">Loading the thread</h2>
+        <Signal label="Loading the thread" />
       </section>
     );
   }
