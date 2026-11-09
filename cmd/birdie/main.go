@@ -47,7 +47,7 @@ Usage:
   birdie agent list
   birdie agent rm NAME
   birdie agent prompt grok-bot [--save] [--url URL]
-  birdie session list
+  birdie session list [--all]
   birdie session default AGENT [NAME]
   birdie send --as NAME --to AGENT[/SESSION] [--thread ID] [--context TEXT] [--wanted TEXT] MESSAGE
   birdie reply --as NAME MSG_ID MESSAGE

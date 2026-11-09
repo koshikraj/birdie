@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"birdie/internal/bus"
@@ -93,30 +92,20 @@ func grokHookOutput(event, text string) (string, error) {
 // sessionCmd looks at running sessions and chooses which takes new conversations.
 func sessionCmd(ctx context.Context, b *bus.Bus, setDefault func(agent, name string) error, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: birdie session list | default AGENT [NAME]")
+		return errors.New("usage: birdie session list [--all] | default AGENT [NAME]")
 	}
 	switch args[0] {
 	case "list":
-		agents, err := b.Agents(ctx)
+		fs := flag.NewFlagSet("session list", flag.ContinueOnError)
+		all := fs.Bool("all", false, "also list sessions that stopped in the last day")
+		if _, err := parse(fs, args[1:]); err != nil {
+			return err
+		}
+		agents, err := b.AgentsWithRecentSessions(ctx)
 		if err != nil {
 			return err
 		}
-		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ADDRESS\tTIER\tDEFAULT\tCWD")
-		for _, a := range agents {
-			for _, s := range a.Sessions {
-				addr := a.Name + "/" + s.Name
-				if s.Name == "" {
-					addr = a.Name + "/" + s.ID
-				}
-				def := ""
-				if s.Default {
-					def = "yes"
-				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", addr, s.Tier, def, s.Cwd)
-			}
-		}
-		return tw.Flush()
+		return printSessions(os.Stdout, agents, *all, time.Now())
 	case "default":
 		if len(args) < 2 || len(args) > 3 {
 			return errors.New("usage: birdie session default AGENT [NAME] (no NAME goes back to the most recently active session)")
