@@ -4,7 +4,7 @@ import { useBusEvent } from '../api/events';
 import { InstallCommand, Letter } from '../ds';
 import { Signal } from '../components/Signal';
 import { AgentTile } from '../components/AgentTile';
-import { agentsOf, identity, liveSessions, peersOf, type Identity } from '../lib/agents';
+import { agentsOf, identity, liveSessions, peersOf, who, type Identity } from '../lib/agents';
 import { href } from '../lib/router';
 import { useMedia, useReducedMotion } from '../lib/media';
 import { ms, useNow } from '../lib/time';
@@ -245,7 +245,7 @@ export function Scene({ overview, recent }: Props) {
     for (const n of [e.from, e.to]) if (e.type !== 'queued' || !ctxRef.current.placed.has(n)) activity.current.set(n, t);
     if (e.type === 'queued') {
       player.push({
-        id: e.id, from: e.from, to: e.to, fromLabel: e.from_label || e.from, toLabel: e.to_label || e.to,
+        id: e.id, from: e.from, to: e.to, fromLabel: who(e.from_label || e.from), toLabel: who(e.to_label || e.to),
         text: e.text, tone: e.in_reply_to ? 'reply' : 'request', landed: false, failed: false,
       });
     } else if (e.type === 'claimed' || e.type === 'delivered' || e.type === 'replied') {

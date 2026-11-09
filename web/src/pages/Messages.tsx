@@ -4,7 +4,7 @@ import { useOverview, useThread, useThreads } from '../api/hooks';
 import type { Delivery, Tracked } from '../api/types';
 import { AgentTile } from '../components/AgentTile';
 import { StatusChip } from '../components/bits';
-import { agentOf } from '../lib/agents';
+import { agentOf, who } from '../lib/agents';
 import { href } from '../lib/router';
 import { MAX_TRIES, errorText, progress, threadChip, troubled } from '../lib/status';
 import { ago, clock, useNow } from '../lib/time';
@@ -41,7 +41,7 @@ export function MessagesPage({ id }: { id?: string }) {
                 <AgentTile name={agentOf(t.participants[0] || t.last_from)} size={36} />
                 <span className="thread-item-body">
                   <span className="thread-item-top">
-                    <span className="thread-item-between">{t.participants.join(' ⇄ ')}</span>
+                    <span className="thread-item-between">{t.participants.map(who).join(' ⇄ ')}</span>
                     <span className="thread-item-when">{ago(t.last_at, now)}</span>
                   </span>
                   <span className="thread-item-preview">{t.last_text}</span>
@@ -77,8 +77,8 @@ function ThreadDetail({
 
   const data = query.data;
   const messages = data?.messages ?? [];
-  const who: string[] = [];
-  for (const m of messages) for (const n of [m.from, m.to]) if (!who.includes(n)) who.push(n);
+  const people: string[] = [];
+  for (const m of messages) for (const n of [m.from, m.to]) if (!people.includes(n)) people.push(n);
 
   useEffect(() => {
     if (!target || !data) return;
@@ -115,7 +115,7 @@ function ThreadDetail({
   return (
     <section aria-labelledby="thread-title" className="panel thread">
       <div className="thread-head">
-        <h2 id="thread-title" className="panel-title">{who.join(' ⇄ ') || data.id}</h2>
+        <h2 id="thread-title" className="panel-title">{people.map(who).join(' ⇄ ') || data.id}</h2>
         <span className="thread-id">
           {data.id} · {messages.length} {messages.length === 1 ? 'message' : 'messages'}
         </span>
@@ -130,7 +130,7 @@ function ThreadDetail({
           <li key={m.id} id={'msg-' + m.id} className={target === m.id ? 'is-target' : undefined}>
             <div className="msg-meta">
               <AgentTile name={agentOf(m.from)} size={28} />
-              <span className="msg-route">{m.from_label} → {m.to_label}</span>
+              <span className="msg-route">{who(m.from_label)} → {who(m.to_label)}</span>
               <span className="msg-when">
                 <time dateTime={m.created_at}>{clock(m.created_at, now)}</time> · {m.id}
               </span>

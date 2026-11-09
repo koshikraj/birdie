@@ -12,7 +12,7 @@ export interface Identity {
   product: string;
   /** The tile's background, a CSS color. */
   tile: string;
-  glyph: 'icon' | 'terminal' | 'letter';
+  glyph: 'icon' | 'terminal' | 'letter' | 'face';
   icon?: string;
   /** The icon fills its tile edge to edge. */
   full: boolean;
@@ -35,8 +35,14 @@ function hash(s: string): number {
   return h >>> 0;
 }
 
+/** The agent the web app and the CLI send as. That's you. */
+export const ME = 'me';
+
 export function identity(name: string): Identity {
   const base = { letter: (name[0] || '?').toUpperCase(), sceneClip: false };
+  if (name === ME) {
+    return { ...base, product: 'You', tile: 'var(--you-tile)', glyph: 'face', full: true, spec: 'dot', color: 1, sceneIcon: 68, sceneClip: true };
+  }
   if (name === 'claude') {
     return { ...base, product: 'Claude Code', tile: '#D97757', glyph: 'icon', icon: claudeIcon, full: false, spec: 'dot', color: 1, sceneIcon: 50 };
   }
@@ -70,6 +76,11 @@ export function identity(name: string): Identity {
 export function agentOf(label: string): string {
   const i = label.indexOf('/');
   return i < 0 ? label : label.slice(0, i);
+}
+
+/** A label as you read it: anything of `me` is you. */
+export function who(label: string): string {
+  return agentOf(label) === ME ? 'you' : label;
 }
 
 /** How other agents address a session: agent/name. */

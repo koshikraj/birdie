@@ -8,6 +8,11 @@
   --agent-2-on: #FFFFFF;
   --agent-3-on: #0A2E2B;
   --agent-4-on: #FFFFFF;
+  /* You, in the same colors in both themes, like the agents' product icons. */
+  --you-tile: #FFE9A8;
+  --you-skin: #F2B38A;
+  --you-shirt: #0B6E69;
+  --you-ink: #0A2E2B;
 }
 [data-theme="dark"] {
   --agent-2-wing: #2BA89C;

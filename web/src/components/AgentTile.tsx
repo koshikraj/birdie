@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { identity } from '../lib/agents';
+import { YouFace } from './YouFace';
 
 interface Props {
   /** The agent's bus name. */
@@ -21,7 +22,9 @@ export function AgentTile({ name, size = 34, ring, className, style }: Props) {
       className={'agent-tile' + (ring ? ' agent-tile-ring' : '') + (className ? ' ' + className : '')}
       style={{ width: size, height: size, borderRadius: radius, background: id.tile, ...style }}
     >
-      {id.glyph === 'icon' && id.icon ? (
+      {id.glyph === 'face' ? (
+        <YouFace size={size} />
+      ) : id.glyph === 'icon' && id.icon ? (
         <img src={id.icon} alt="" style={id.full ? { width: '100%', height: '100%', objectFit: 'cover' } : { width: '56%', height: '56%' }} />
       ) : id.glyph === 'terminal' ? (
         <svg viewBox="0 0 24 24" width={Math.round(size * 0.6)} height={Math.round(size * 0.6)} className="agent-tile-terminal">

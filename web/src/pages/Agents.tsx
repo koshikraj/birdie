@@ -18,6 +18,7 @@ import {
   liveSessions,
   peersOf,
   sessionAddress,
+  who,
 } from '../lib/agents';
 import { href } from '../lib/router';
 import { errorText } from '../lib/status';
@@ -528,7 +529,7 @@ function SendForm({
         return next;
       });
     } else if (e.in_reply_to === sent.result.id && e.type === 'queued') {
-      setSent((s) => (s ? { ...s, phase: 'replied', answeredBy: e.from_label || e.from } : s));
+      setSent((s) => (s ? { ...s, phase: 'replied', answeredBy: who(e.from_label || e.from) } : s));
     }
   });
 
@@ -584,7 +585,7 @@ function SendForm({
         detail = 'Waiting for an answer. It will appear in Messages.';
         break;
       case 'replied':
-        title = 'Answered by ' + (reply?.from_label || sent.answeredBy || where);
+        title = 'Answered by ' + who(reply?.from_label || sent.answeredBy || where);
         detail = 'The answer is in the thread.';
         break;
       case 'failed':

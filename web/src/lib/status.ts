@@ -1,4 +1,5 @@
 import type { Delivery, MessageStatus, ThreadSummary, Tracked } from '../api/types';
+import { who } from './agents';
 import { ago, ms, span } from './time';
 
 /** birdie stops retrying a message after this many tries (internal/bus maxAttempts). */
@@ -68,7 +69,7 @@ export function chipFor(status: MessageStatus, hasError: boolean, answeredBy?: s
 
 export function messageChip(m: Tracked, all: Tracked[]): Chip {
   const reply = m.status === 'replied' ? all.find((x) => x.in_reply_to === m.id) : undefined;
-  return chipFor(m.status, !!m.error, reply?.from_label);
+  return chipFor(m.status, !!m.error, reply?.from_label && who(reply.from_label));
 }
 
 export function threadChip(t: ThreadSummary): Chip {

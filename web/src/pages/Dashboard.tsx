@@ -3,7 +3,7 @@ import { useOverview, useRecentMessages } from '../api/hooks';
 import type { Agent, Overview, Session, Tracked } from '../api/types';
 import { AgentTile } from '../components/AgentTile';
 import { SessionStateMark, StatusChip } from '../components/bits';
-import { agentOf, agentsOf, identity, liveSessions, sessionAddress } from '../lib/agents';
+import { agentOf, agentsOf, identity, liveSessions, sessionAddress, who } from '../lib/agents';
 import { href } from '../lib/router';
 import { MAX_TRIES, errorText, messageChip } from '../lib/status';
 import { ago, agoWords, until, useNow } from '../lib/time';
@@ -158,7 +158,7 @@ function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loadin
               <div className="feed-body">
                 <div className="feed-meta">
                   <a className="feed-route" href={href.thread(m.thread_id || m.id)}>
-                    {m.from_label} → {m.to_label}
+                    {who(m.from_label)} → {who(m.to_label)}
                   </a>
                   <span className="feed-when">{ago(m.created_at, now)}</span>
                 </div>
@@ -186,7 +186,7 @@ function Pairs({ overview }: { overview: Overview }) {
             <AgentTile name={p.a} size={30} ring />
             <AgentTile name={p.b} size={30} ring />
           </div>
-          <span className="pairs-label">{p.a} ⇄ {p.b}</span>
+          <span className="pairs-label">{who(p.a)} ⇄ {who(p.b)}</span>
           <div className="pairs-bar" aria-hidden="true">
             <span style={{ width: Math.round((p.count / most) * 100) + '%' }} />
           </div>
