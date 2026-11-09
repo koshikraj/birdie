@@ -251,7 +251,7 @@ func TestPushHostGetsMessagesAndConfirmsThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(m.Note, "claude/api gets this right away") {
+	if !strings.Contains(m.Note, "Claude Code · api gets this right away") {
 		t.Fatalf("note = %q", m.Note)
 	}
 	select {

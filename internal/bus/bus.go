@@ -546,14 +546,15 @@ func (b *Bus) findSession(ctx context.Context, to Agent, want string) (Session, 
 	return Session{}, fmt.Errorf("%w: %s has %d sessions named %q; use one of %s", ErrInvalid, to.Name, len(match), want, strings.Join(ids, ", "))
 }
 
-// deliveryNote tells the sender when the recipient will see m.
+// deliveryNote tells the sender when the recipient will see m, naming it by
+// its label.
 func (b *Bus) deliveryNote(ctx context.Context, to Agent, m Message) string {
 	switch to.Delivery {
 	case DeliveryPull:
 	case "webhook":
-		return fmt.Sprintf("queued: being sent to %s's webhook; it answers in its own time", to.Name)
+		return fmt.Sprintf("queued: being sent to %s's webhook; it answers in its own time", to.DisplayName())
 	case "acp":
-		return fmt.Sprintf("queued: birdie will start %s for this and post its answer on this thread", to.Name)
+		return fmt.Sprintf("queued: birdie will start %s for this and post its answer on this thread", to.DisplayName())
 	default:
 		return "queued"
 	}
@@ -576,12 +577,12 @@ func (b *Bus) deliveryNote(ctx context.Context, to Agent, m Message) string {
 			}
 		}
 		if target == nil {
-			return fmt.Sprintf("queued: %s has no open session; it gets this when it next checks or starts", to.Name)
+			return fmt.Sprintf("queued: %s has no open session; it gets this when it next checks or starts", to.DisplayName())
 		}
 	}
-	name := to.Name
+	name := to.DisplayName()
 	if target.Name != "" {
-		name += "/" + target.Name
+		name += " · " + target.Name
 	}
 	switch target.Tier {
 	case TierPush:

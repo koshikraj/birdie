@@ -288,10 +288,14 @@ func session(ctx context.Context, args []string) error {
 		if err := st.SetAgentConfig(ctx, agent, "default_session", name); err != nil {
 			return fmt.Errorf("set default for %q: %w", agent, err)
 		}
+		label := agent
+		if a, err := st.GetAgent(ctx, agent); err == nil {
+			label = a.DisplayName()
+		}
 		if name == "" {
-			fmt.Printf("%s: new conversations go to the most recently active session\n", agent)
+			fmt.Printf("%s: new conversations go to the most recently active session\n", label)
 		} else {
-			fmt.Printf("%s: new conversations go to the session named %s when it's running\n", agent, name)
+			fmt.Printf("%s: new conversations go to the session named %s when it's running\n", label, name)
 		}
 		return nil
 	}, args)
@@ -339,11 +343,21 @@ func reply(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("replied to %s with %s (thread %s)\n", m.To, m.ID, m.ThreadID)
+	fmt.Printf("replied to %s with %s (thread %s)\n", agentLabels(ctx, c).agent(m.To), m.ID, m.ThreadID)
 	if m.Note != "" {
 		fmt.Println(m.Note)
 	}
 	return nil
+}
+
+// agentLabels names the agents the bus knows, by their labels. Agents it
+// can't list are named by what their names stand for.
+func agentLabels(ctx context.Context, c *client.Client) sessionLabels {
+	agents, err := c.Agents(ctx)
+	if err != nil {
+		agents = nil
+	}
+	return labelSessions(agents)
 }
 
 func inbox(ctx context.Context, args []string) error {
@@ -358,8 +372,12 @@ func inbox(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	labels := sessionLabels{}
+	if len(msgs) > 0 {
+		labels = agentLabels(ctx, c)
+	}
 	for _, m := range msgs {
-		fmt.Printf("── %s  from %s  thread %s  %s\n%s\n", m.ID, m.From, m.ThreadID, m.CreatedAt.Local().Format(time.DateTime), m.Content)
+		fmt.Printf("── %s  from %s  thread %s  %s\n%s\n", m.ID, labels.of(m.From, m.FromSession), m.ThreadID, m.CreatedAt.Local().Format(time.DateTime), m.Content)
 	}
 	if len(msgs) == 0 {
 		fmt.Println("(no new messages)")

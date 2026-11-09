@@ -20,7 +20,7 @@ const (
 // stopped are listed when all is set, and counted otherwise.
 func printSessions(w io.Writer, agents []bus.Agent, all bool, now time.Time) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "SESSION\tSTATE\tTIER\tDEFAULT\tBRANCH\tFOLDER")
+	fmt.Fprintln(tw, "SESSION\tADDRESS\tSTATE\tTIER\tDEFAULT\tBRANCH\tFOLDER")
 	shown, hidden := 0, 0
 	for _, a := range agents {
 		for _, s := range a.Sessions {
@@ -32,7 +32,7 @@ func printSessions(w io.Writer, agents []bus.Agent, all bool, now time.Time) err
 			if s.Default {
 				def = "yes"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", sessionAddress(s), sessionState(s, now), s.Tier, def,
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", sessionLabel(a, s), sessionAddress(s), sessionState(s, now), s.Tier, def,
 				printable(s.Branch, false), printable(homePath(s.Cwd), false))
 			shown++
 		}
@@ -56,7 +56,7 @@ func printAgents(w io.Writer, agents []bus.Agent, deliveries map[string]store.De
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	header := "AGENT\tDELIVERY\tSESSIONS\tWAITING\tLAST DELIVERED"
+	header := "AGENT\tADDRESS\tDELIVERY\tSESSIONS\tWAITING\tLAST DELIVERED"
 	if describe {
 		header += "\tDESCRIPTION"
 	}
@@ -79,12 +79,12 @@ func printAgents(w io.Writer, agents []bus.Agent, deliveries map[string]store.De
 		if d.Waiting > 0 {
 			waiting = fmt.Sprintf("%d, oldest %s", d.Waiting, span(now.Sub(d.Oldest)))
 		}
-		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s", a.Name, a.Delivery, sessions, waiting, ago(now, d.Delivered))
+		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", printable(a.DisplayName(), false), a.Name, a.Delivery, sessions, waiting, ago(now, d.Delivered))
 		if describe {
 			row += "\t" + printable(a.Description, false)
 		}
 		fmt.Fprintln(tw, row)
-		problems = append(problems, deliveryProblems(a.Name, d, live, now)...)
+		problems = append(problems, deliveryProblems(printable(a.DisplayName(), false), d, live, now)...)
 	}
 	if err := tw.Flush(); err != nil {
 		return err

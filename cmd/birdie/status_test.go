@@ -24,7 +24,7 @@ func TestWaitingList(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{"queued; try 1 failed", "claude/api", "check my calendar", "To follow one: birdie thread MSG_ID"} {
+	for _, want := range []string{"queued; try 1 failed", "Claude Code · api", "check my calendar", "To follow one: birdie thread MSG_ID"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in:\n%s", want, text)
 		}

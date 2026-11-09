@@ -166,7 +166,7 @@ func TestSendShowsUpEverywhere(t *testing.T) {
 		t.Fatalf("send: %s", resp.Status)
 	}
 	decode(t, resp, &sent)
-	if !strings.Contains(sent.Note, "bob/api") {
+	if !strings.Contains(sent.Note, "bob · api") {
 		t.Fatalf("note = %q", sent.Note)
 	}
 

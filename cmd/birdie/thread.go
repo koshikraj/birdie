@@ -66,7 +66,11 @@ func printThread(w io.Writer, agents []bus.Agent, msgs []store.Tracked, full boo
 			}
 		}
 	}
-	fmt.Fprintf(w, "Thread %s: %d %s between %s.\n", printable(msgs[0].ThreadID, false), len(msgs), plural(len(msgs), "message", "messages"), joinAnd(who))
+	names := make([]string, len(who))
+	for i, name := range who {
+		names[i] = labels.agent(name)
+	}
+	fmt.Fprintf(w, "Thread %s: %d %s between %s.\n", printable(msgs[0].ThreadID, false), len(msgs), plural(len(msgs), "message", "messages"), joinAnd(names))
 	cut := false
 	for _, m := range msgs {
 		fmt.Fprintf(w, "\n── %s  %s  %s → %s\n", m.ID, m.CreatedAt.Local().Format(time.DateTime), labels.of(m.From, m.FromSession), labels.of(m.To, m.ToSession))
@@ -134,31 +138,43 @@ func progress(m store.Tracked, kind string, labels sessionLabels, now time.Time)
 	return m.Status
 }
 
-// sessionLabels names sessions by their address, keyed by agent/id.
-type sessionLabels map[string]string
+// sessionLabels names agents by their labels and sessions as "label · name".
+type sessionLabels struct {
+	agents   map[string]string // agent name to label
+	sessions map[string]string // agent/id to session name
+}
 
 func labelSessions(agents []bus.Agent) sessionLabels {
-	l := sessionLabels{}
+	l := sessionLabels{agents: map[string]string{}, sessions: map[string]string{}}
 	for _, a := range agents {
+		l.agents[a.Name] = a.DisplayName()
 		for _, s := range a.Sessions {
-			l[a.Name+"/"+s.ID] = sessionAddress(s)
+			l.sessions[a.Name+"/"+s.ID] = sessionName(s)
 		}
 	}
 	return l
 }
 
+// agent is an agent's label, or what its name stands for when it isn't known.
+func (l sessionLabels) agent(name string) string {
+	if label, ok := l.agents[name]; ok {
+		return label
+	}
+	return printable(bus.LabelOf(name, nil), false)
+}
+
 // of names one of agent's sessions, or the agent itself when id is empty.
 func (l sessionLabels) of(agent, id string) string {
 	if id == "" {
-		return agent
+		return l.agent(agent)
 	}
-	if addr, ok := l[agent+"/"+id]; ok {
-		return addr
+	if name, ok := l.sessions[agent+"/"+id]; ok {
+		return l.agent(agent) + " · " + name
 	}
 	if len(id) > 8 {
 		id = id[:8]
 	}
-	return agent + "/" + printable(id, false)
+	return l.agent(agent) + " · " + printable(id, false)
 }
 
 func deliveryKinds(agents []bus.Agent) map[string]string {

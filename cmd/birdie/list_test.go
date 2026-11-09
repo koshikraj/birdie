@@ -115,7 +115,7 @@ func TestAgentList(t *testing.T) {
 		"bot: the last delivery failed ",
 		"s ago: HTTP 502: Bad Gateway. Next try in ",
 		"s. Details: birdie thread " + m.ID + "\n",
-		"codex: no session is running, so 1 message will wait until one starts.",
+		"Codex: no session is running, so 1 message will wait until one starts.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in:\n%s", want, text)
