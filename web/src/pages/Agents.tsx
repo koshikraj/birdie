@@ -9,6 +9,7 @@ import { LoopBird } from '../components/LoopBird';
 import { SessionStateMark } from '../components/bits';
 import { Birds, Button, InstallCommand, Letter, TextField } from '../ds';
 import {
+  agentOf,
   agentsOf,
   defaultSession,
   deliveryLabel,
@@ -26,6 +27,7 @@ import { href } from '../lib/router';
 import { errorText } from '../lib/status';
 import { ago, ms, span, until, useNow } from '../lib/time';
 import { Signal } from '../components/Signal';
+import { Select } from '../components/Select';
 
 export function AgentsPage({ section, to: pickTo }: { section?: 'send' | 'add'; to?: string }) {
   const overview = useOverview();
@@ -621,15 +623,21 @@ function SendForm({
       </div>
       <form onSubmit={submit} noValidate className="send-form">
         <div className="field">
-          <label htmlFor="send-to">To</label>
-          <select id="send-to" className="select" aria-describedby="send-to-note" value={value} onChange={(e) => setTo(e.target.value)} disabled={!options.length}>
-            {!options.length && <option value="">No agents yet</option>}
-            {options.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+          <label id="send-to-label" onClick={() => document.getElementById('send-to')?.focus()}>To</label>
+          <Select
+            id="send-to"
+            labelledBy="send-to-label"
+            describedBy="send-to-note"
+            value={value}
+            onChange={setTo}
+            placeholder="No agents yet"
+            options={options.map((t) => ({
+              value: t.value,
+              label: t.label,
+              hint: t.label === t.value ? undefined : t.value,
+              icon: <AgentTile name={agentOf(t.value)} size={28} />,
+            }))}
+          />
           <span id="send-to-note" className="field-note">{resolve(o, value)}</span>
         </div>
         <div className="field">
