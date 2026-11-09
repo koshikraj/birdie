@@ -5,6 +5,7 @@ import { InstallCommand, Letter } from '../ds';
 import { Signal } from '../components/Signal';
 import { AgentTile } from '../components/AgentTile';
 import { agentsOf, identity, liveSessions, peersOf, who, type Identity } from '../lib/agents';
+import { courier } from '../lib/courier';
 import { href } from '../lib/router';
 import { useMedia, useReducedMotion } from '../lib/media';
 import { ms, useNow } from '../lib/time';
@@ -237,6 +238,20 @@ export function Scene({ overview, recent }: Props) {
 
   // A flight wakes its two agents when it starts playing, so a sleeping
   // recipient dozes until its letter heads its way.
+  // Hand each message to the feed as its letter passes the hub.
+  const hubRef = useRef<SVGRectElement>(null);
+  player.onHub = (f) => {
+    const rect = hubRef.current?.getBoundingClientRect();
+    if (rect && rect.width) courier.passed({ id: f.id, from: f.from, to: f.to, rect });
+    else courier.dropped(f.id);
+  };
+  player.onDrop = (f) => courier.dropped(f.id);
+  const hasHub = !!overview && !compact;
+  useEffect(() => {
+    courier.setActive(hasHub && !reduce && !paused);
+  }, [hasHub, reduce, paused]);
+  useEffect(() => () => courier.setActive(false), []);
+
   player.onStart = (f) => {
     const t = Date.now();
     activity.current.set(f.from, t);
@@ -525,7 +540,7 @@ export function Scene({ overview, recent }: Props) {
             <rect key={'perch-' + p.name} x={p.x - 64} y={p.y} width={128} height={5} rx={2.5} className="scene-ink" />
           ))}
 
-          <rect x={425} y={layout.hubY - 75} width={150} height={150} rx={17} className="scene-hub" />
+          <rect ref={hubRef} x={425} y={layout.hubY - 75} width={150} height={150} rx={17} className="scene-hub" />
           <g transform={'translate(440 ' + (layout.hubY - 60) + ')'}>
             <rect x={f2(lg.wireX)} y={86} width={f2(lg.wireW)} height={6} rx={3} className="scene-ink" />
             <path d="M18 50 L2 46 L16 68 Z" transform={lg.dotTail} style={{ fill: 'var(--brand-tomato)' }} />

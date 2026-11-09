@@ -64,6 +64,10 @@ export class Player {
   reduce = false;
   /** Called when a flight starts playing. */
   onStart: ((f: Flight) => void) | null = null;
+  /** Called when a flight's letter passes the hub. */
+  onHub: ((f: Flight) => void) | null = null;
+  /** Called for a flight that won't play. */
+  onDrop: ((f: Flight) => void) | null = null;
 
   push(f: Flight) {
     if (this.reduce) {
@@ -75,7 +79,10 @@ export class Player {
     }
     if (this.current?.f.id === f.id || this.queue.some((q) => q.id === f.id)) return;
     this.queue.push(f);
-    while (this.queue.length > MAX_PENDING) this.queue.shift();
+    while (this.queue.length > MAX_PENDING) {
+      const gone = this.queue.shift();
+      if (gone) this.onDrop?.(gone);
+    }
   }
 
   /** Records how far a message got, for a flight that's playing or waiting. */
@@ -91,6 +98,7 @@ export class Player {
     this.reduce = reduce;
     if (reduce) {
       const f = this.current?.f || this.queue[this.queue.length - 1] || this.last;
+      this.queue.forEach((q) => q !== f && this.onDrop?.(q));
       this.queue = [];
       this.current = f ? { f, t: T.STILL, elapsed: T.STILL, waited: 0 } : null;
     }
@@ -121,7 +129,9 @@ export class Player {
       }
       const c = this.current;
       if (c) {
+        const before = c.elapsed;
         c.elapsed += d;
+        if (before < T.HUB && c.elapsed >= T.HUB) this.onHub?.(c.f);
         const release = c.f.landed || c.f.failed || c.waited >= HOLD_MAX || !ctx.placed.has(c.f.to);
         if (c.t < HOLD_AT) c.t = release ? c.t + d : Math.min(c.t + d, HOLD_AT);
         else if (!release) c.waited += d;
