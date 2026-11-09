@@ -52,6 +52,7 @@ Usage:
   birdie send --as NAME --to AGENT[/SESSION] [--thread ID] [--context TEXT] [--wanted TEXT] MESSAGE
   birdie reply --as NAME MSG_ID MESSAGE
   birdie inbox --as NAME [--wait 30s] [--thread ID]
+  birdie thread THREAD_ID|MSG_ID [--full]
   birdie version
 
 Each agent's token is stored in %s/<name> (mode 0600).
@@ -78,6 +79,8 @@ func main() {
 		err = runMCP(ctx, args)
 	case "onboard":
 		err = onboard(ctx, args)
+	case "thread":
+		err = threadCmd(ctx, args)
 	case "doctor":
 		err = doctor(ctx, args)
 	case "setup":
