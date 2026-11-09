@@ -116,10 +116,15 @@ tool call if it's busy.
 | A new conversation for `claude` | The default session: the most recently active one, unless you chose one |
 
 ```sh
-birdie session list                  # who's running, and which is the default
+birdie session list                  # who's running, what each is doing, and which is the default
+birdie session list --all            # also the sessions that stopped in the last day
 birdie session default claude api    # new conversations go to the session named api
 birdie session default claude        # back to the most recently active
 ```
+
+Claude Code sessions show as `busy`, `idle 12m`, or `waiting 3m` when they're
+stopped until you answer them, as at a permission prompt. Other agents' sessions
+show as `live`, because birdie can't tell what they're doing.
 
 If a session closes, its waiting messages go to the default session. If none is
 open, they wait for one.
@@ -201,6 +206,13 @@ Or from a terminal:
 birdie agent add me
 birdie send --as me --to claude "What's 12 × 12?"
 birdie inbox --as me --wait 60s
+```
+
+To see where a message got to:
+
+```sh
+birdie status                        # what's running, how delivery is going, and what's still waiting
+birdie thread MSG_ID                 # each message in its thread, and how far it got
 ```
 
 ## Other agents
@@ -293,6 +305,7 @@ This project used to be called agent-bus. To upgrade:
 ```
 birdie serve [--addr 127.0.0.1:7777] [--loop-limit 12]
 birdie onboard
+birdie status
 birdie doctor
 birdie setup claude|codex|grok|hermes|--all [--as NAME] [--remove] [--dry-run] [--wake]
 birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]
@@ -301,10 +314,11 @@ birdie agent add NAME [--description TEXT] [--webhook URL --auth-file PATH | --a
 birdie agent describe NAME TEXT
 birdie agent list | rm NAME
 birdie agent prompt grok-bot [--save]
-birdie session list | default AGENT [NAME]
+birdie session list [--all] | default AGENT [NAME]
 birdie send  --as NAME --to AGENT[/SESSION] MESSAGE
 birdie reply --as NAME MSG_ID MESSAGE
 birdie inbox --as NAME [--wait 30s]
+birdie thread THREAD_ID|MSG_ID [--full]
 birdie mcp   --as NAME [--no-push] [--channel [--server-name birdie]]
 birdie hook  grok post-tool-use|stop --as NAME
 ```
@@ -327,7 +341,8 @@ that way come back unless confirmed with `ack`.
 | A message went to the wrong session | `birdie session list` shows the default; choose one with `session default`, or address it as `agent/session` |
 | Claude never wakes up | `session list` shows it as `push`. If it shows `pull` or isn't listed, restart it. `claude -p` runs can't be woken |
 | Codex shows `pull` | It hasn't used a birdie tool yet; ask it to run `list_agents` |
-| Grok Bot gets nothing | `birdie agent list` shows `grok-bot` as `webhook`. After 8 failed tries the sender gets a notice from `birdie` saying why |
+| A message never arrived | `birdie thread MSG_ID` shows how far it got and which session took it. `birdie status` lists everything still waiting |
+| Grok Bot gets nothing | `birdie agent list` shows `grok-bot` as `webhook`, and why its last delivery failed. After 8 failed tries the sender gets a notice from `birdie` saying why |
 | Headless Grok doesn't answer | The service log shows `acp: turn failed`; the sender also gets a reply explaining why |
 | `too many messages` | Two agents sent 12 messages in 10 minutes, which looks like a loop. Change it with `serve --loop-limit` (`0` = off) |
 
