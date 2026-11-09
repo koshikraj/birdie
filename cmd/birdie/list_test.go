@@ -76,3 +76,49 @@ func TestSessionList(t *testing.T) {
 		t.Errorf("--all should list the stopped session:\n%s", out.String())
 	}
 }
+
+func failingBot(t *testing.T) (*bus.Bus, *store.SQLite, bus.Message) {
+	t.Helper()
+	ctx := context.Background()
+	b, st := statusBus(t)
+	m, err := b.Send(ctx, "claude", bus.SendInput{To: "bot", Content: "check my calendar", FromSession: "s-api"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordFailure(ctx, m.ID, "HTTP 502: Bad Gateway.", time.Now().Add(30*time.Second), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Send(ctx, "claude", bus.SendInput{To: "codex", Content: "review this"}); err != nil {
+		t.Fatal(err)
+	}
+
+	return b, st, m
+}
+
+func TestAgentList(t *testing.T) {
+	ctx := context.Background()
+	b, st, m := failingBot(t)
+	agents, err := b.Agents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveries, err := st.Deliveries(ctx, time.Now().Add(-problemWindow))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := printAgents(&out, agents, deliveries, true, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	for _, want := range []string{
+		"bot: the last delivery failed ",
+		"s ago: HTTP 502: Bad Gateway. Next try in ",
+		"s. Details: birdie thread " + m.ID + "\n",
+		"codex: no session is running, so 1 message will wait until one starts.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in:\n%s", want, text)
+		}
+	}
+}

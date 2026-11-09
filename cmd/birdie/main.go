@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net"
@@ -18,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"text/tabwriter"
 	"time"
 
 	"birdie/internal/adapter"
@@ -388,16 +388,15 @@ func agentCmd(ctx context.Context, args []string) error {
 
 	switch args[0] {
 	case "list":
-		agents, err := st.ListAgents(ctx)
+		agents, err := bus.New(st, slog.New(slog.NewTextHandler(io.Discard, nil))).Agents(ctx)
 		if err != nil {
 			return err
 		}
-		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "NAME\tDELIVERY\tCREATED\tDESCRIPTION")
-		for _, a := range agents {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Name, a.Delivery, a.CreatedAt.Local().Format(time.DateTime), a.Description)
+		deliveries, err := st.Deliveries(ctx, time.Now().Add(-problemWindow))
+		if err != nil {
+			return err
 		}
-		return tw.Flush()
+		return printAgents(os.Stdout, agents, deliveries, true, time.Now())
 	case "describe":
 		if len(pos) < 2 {
 			return errors.New("usage: birdie agent describe NAME TEXT")

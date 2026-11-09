@@ -46,6 +46,14 @@ func span(d time.Duration) string {
 	return fmt.Sprintf("%dd", int(d/(24*time.Hour)))
 }
 
+// ago says how long before now t was.
+func ago(now, t time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
+	return span(now.Sub(t)) + " ago"
+}
+
 // homePath shortens a path in the home folder to start with ~.
 func homePath(p string) string {
 	home, err := os.UserHomeDir()
@@ -76,6 +84,20 @@ func printable(s string, lines bool) string {
 		}
 		return r
 	}, s)
+}
+
+// errorText makes a delivery error fit in a sentence.
+func errorText(s string, n int) string {
+	return clip(strings.TrimRight(printable(strings.TrimSpace(s), false), "."), n)
+}
+
+// clip shortens s to at most n characters, marking the cut.
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 func plural(n int, one, many string) string {
