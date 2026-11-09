@@ -5,7 +5,7 @@ import { useBusEvent } from '../api/events';
 import { keys, useOverview, useThread, useTools } from '../api/hooks';
 import type { Agent, MessageStatus, Overview, SendResult, Tool } from '../api/types';
 import { AgentTile } from '../components/AgentTile';
-import { BirdShape } from '../components/BirdShape';
+import { LoopBird } from '../components/LoopBird';
 import { SessionStateMark } from '../components/bits';
 import { Birds, Button, InstallCommand, Letter, TextField } from '../ds';
 import {
@@ -144,9 +144,7 @@ function AgentCard({
     <article aria-labelledby={headingId} className={'agent-card' + (picked ? ' is-picked' : '') + (h.error ? ' is-problem' : '')}>
       <div className="agent-card-top">
         <div className="agent-stage">
-          <BirdShape spec={id.spec} color={id.color} className="agent-stage-bird" />
-          <AgentTile name={a.name} size={60} className="agent-stage-icon" />
-          <AgentTile name={a.name} size={44} className="agent-badge" />
+          <LoopBird name={a.name} className="agent-stage-bird" />
         </div>
         <div className="agent-card-name">
           <div>

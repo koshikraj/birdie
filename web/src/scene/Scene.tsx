@@ -8,7 +8,8 @@ import { agentsOf, identity, liveSessions, peersOf, who, type Identity } from '.
 import { href } from '../lib/router';
 import { useMedia, useReducedMotion } from '../lib/media';
 import { ms, useNow } from '../lib/time';
-import { SPECS, T, at, back, bump, clamp, inOut, lerp, lut, outCubic, part, seg, type Lut, type Pt } from './geometry';
+import { T, at, back, bump, clamp, inOut, lerp, lut, outCubic, part, seg, type Lut, type Pt } from './geometry';
+import { BirdBody, TileClip, birdLook, burstBits } from './MorphBird';
 import { Player, type Flight, type SceneContext } from './player';
 import './scene.css';
 
@@ -371,15 +372,7 @@ export function Scene({ overview, recent }: Props) {
     const a = player.anims.get(pl.name);
     const mv = a ? player.morphValue(a.morph) : { p: 0, color: 0, q: 1 };
     const p = mv.p;
-    const mix = clamp(mv.color);
-    const sp = SPECS[pl.id.spec];
-    const w = Math.max(10, lerp(68, sp.w, p));
-    const h = Math.max(10, lerp(68, sp.h, p));
-    const rx = Math.min(Math.max(lerp(17, sp.rx, p), 4), w / 2, h / 2);
-    const birdFill = 'var(--agent-' + pl.id.color + ')';
-    const fill = mix >= 0.995 ? birdFill : mix <= 0.005 ? pl.id.tile : 'color-mix(in oklab, ' + birdFill + ' ' + (mix * 100).toFixed(1) + '%, ' + pl.id.tile + ')';
-    const parts = clamp((p - 0.45) / 0.55);
-    const eyes = clamp((p - 0.6) / 0.4);
+    const look = birdLook(pl.id, p, mv.color);
     const shut = !!a?.shut;
     const involved = !!m && (m.from === pl.name || m.to === pl.name);
     const morph = a?.morph;
@@ -398,20 +391,12 @@ export function Scene({ overview, recent }: Props) {
       return { x: pl.x + 30 * pl.face + (k - 1) * 3 - q * 22 * pl.face, y: pl.y - 84 - q * 44, o: Math.sin(Math.PI * q) };
     });
 
-    const bits = Array.from({ length: 6 }, () => hidden);
+    let bits = burstBits(0, 0, 0, 0);
     if (morph && morph.burst && morph.dur) {
       const b = morph.start + morph.dur * 0.45;
-      const q = seg(clockNow, b, b + 0.6);
-      if (q > 0 && q < 1) {
-        for (let k = 0; k < 6; k++) {
-          const ang = (k / 6) * Math.PI * 2 + i;
-          const d = outCubic(q) * 74;
-          bits[k] = { x: pl.x + Math.cos(ang) * d, y: pl.y - 46 + Math.sin(ang) * d + q * q * 26, r: 6 * (1 - q) + 0.5, o: 1 - q };
-        }
-      }
+      bits = burstBits(seg(clockNow, b, b + 0.6), pl.x, pl.y, i);
     }
 
-    const wingExtra = sp.wing[2] ? ' rotate(' + sp.wing[2] + ' ' + sp.wing[0] + ' ' + sp.wing[1] + ')' : '';
     const live = liveSessions(pl.agent);
     const n = (peers.get(pl.name) || []).length;
     let sessions: string;
@@ -427,8 +412,7 @@ export function Scene({ overview, recent }: Props) {
     else if (problem) role = 'not reachable';
 
     return {
-      pl, sp, p, w, h, rx, fill, parts, eyes, shut, y, lean, pop, grey, zs, bits, wingExtra, detail, role, problem,
-      glyph: 1 - seg(mix, 0.05, 0.5),
+      pl, look, shut, y, lean, pop, grey, zs, bits, detail, role, problem,
     };
   });
 
@@ -514,9 +498,7 @@ export function Scene({ overview, recent }: Props) {
         )}
         <svg role="img" aria-label={sceneLabel} viewBox={'0 0 ' + W + ' ' + layout.height} className="scene-svg">
           <defs>
-            <clipPath id={clipId}>
-              <rect x={-34} y={-68} width={68} height={68} rx={17} />
-            </clipPath>
+            <TileClip id={clipId} />
             <clipPath id={clipId + '-mini'}>
               <rect x={0} y={0} width={MINI} height={MINI} rx={6} />
             </clipPath>
@@ -571,9 +553,7 @@ export function Scene({ overview, recent }: Props) {
           <text x={500} y={layout.hubY + 102} textAnchor="middle" className="scene-hub-name">birdie</text>
 
           {birds.map((b) => {
-            const sp = b.sp;
             const { pl } = b;
-            const id = pl.id;
             return (
               <g
                 key={'bird-' + pl.name}
@@ -583,20 +563,7 @@ export function Scene({ overview, recent }: Props) {
                 onPointerLeave={() => setHovered((h) => (h === pl.name ? null : h))}
               >
                 <rect x={-58} y={-100} width={116} height={104} className="scene-hit" />
-                <g transform={'scale(' + pl.face + ' 1)'}>
-                  <polygon points={sp.tailPts} transform={part(sp.tail[0], sp.tail[1], b.parts)} style={{ fill: 'var(--agent-' + id.color + ')' }} />
-                  <rect x={f2(-b.w / 2)} y={f2(-b.h)} width={f2(b.w)} height={f2(b.h)} rx={f2(b.rx)} style={{ fill: b.fill }} />
-                  <ellipse
-                    cx={sp.wing[0]} cy={sp.wing[1]} rx={sp.wingR[0]} ry={sp.wingR[1]}
-                    transform={part(sp.wing[0], sp.wing[1], b.parts, b.wingExtra)}
-                    style={{ fill: 'var(--agent-' + id.color + '-wing)' }}
-                  />
-                  <polygon points={sp.beakPts} transform={part(sp.beak[0], sp.beak[1] + 8, b.parts)} className="scene-ink" />
-                  <circle cx={sp.eye[0]} cy={sp.eye[1]} r={9} transform={part(sp.eye[0], sp.eye[1], b.shut ? 0 : b.eyes)} style={{ fill: 'var(--bird-eye)' }} />
-                  <circle cx={sp.eye[0] + 3} cy={sp.eye[1]} r={4.5} transform={part(sp.eye[0] + 3, sp.eye[1], b.shut ? 0 : b.eyes)} style={{ fill: 'var(--bird-pupil)' }} />
-                  <rect x={sp.eye[0] - 8} y={sp.eye[1] - 2} width={16} height={4} rx={2} transform={part(sp.eye[0], sp.eye[1], b.shut ? b.eyes : 0)} style={{ fill: 'var(--bird-eye)' }} />
-                </g>
-                {b.glyph > 0.001 && <Glyph id={id} clipId={clipId} opacity={b.glyph} />}
+                <BirdBody id={pl.id} look={b.look} face={pl.face} shut={b.shut} clipId={clipId} />
               </g>
             );
           })}
@@ -682,37 +649,5 @@ function NameLabel({ x, y, name, id, clipId }: { x: number; y: number; name: str
       </g>
       <text x={f1(left + MINI + gap)} y={y} className="scene-name">{name}</text>
     </g>
-  );
-}
-
-/** The agent's product icon on its tile, fading as it turns into its bird. */
-function Glyph({ id, clipId, opacity }: { id: Identity; clipId: string; opacity: number }) {
-  const o = opacity.toFixed(3);
-  if (id.glyph === 'icon' && id.icon) {
-    const s = id.sceneIcon;
-    return (
-      <image
-        href={id.icon}
-        x={-s / 2}
-        y={-34 - s / 2}
-        width={s}
-        height={s}
-        opacity={o}
-        clipPath={id.sceneClip ? 'url(#' + clipId + ')' : undefined}
-        preserveAspectRatio={id.sceneClip ? 'xMidYMid slice' : undefined}
-      />
-    );
-  }
-  if (id.glyph === 'terminal') {
-    return (
-      <g transform="translate(-20 -54) scale(1.6667)" opacity={o}>
-        <path d="M5 7l5 5-5 5M12 17h7" className="scene-terminal" />
-      </g>
-    );
-  }
-  return (
-    <text x={0} y={-22} textAnchor="middle" opacity={o} className="scene-letter" style={{ fill: 'var(--agent-' + id.color + '-on)' }}>
-      {id.letter}
-    </text>
   );
 }
