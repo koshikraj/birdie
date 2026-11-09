@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useOverview, useRecentMessages } from '../api/hooks';
 import type { Agent, Overview, Session, Tracked } from '../api/types';
 import { AgentTile } from '../components/AgentTile';
@@ -89,15 +89,17 @@ function Attention({ overview, now }: { overview: Overview; now: number }) {
 
 function Stats({ overview, now }: { overview: Overview; now: number }) {
   const agents = agentsOf(overview);
-  const withSessions = agents.filter((a) => liveSessions(a).length > 0).length;
+  const running = agents.filter((a) => liveSessions(a).length > 0);
+  const withSessions = running.length;
   const sessions = agents.flatMap(liveSessions);
   const needYou = sessions.filter((s) => s.state === 'waiting').length;
   const busy = sessions.filter((s) => s.state === 'busy').length;
   const queuedFor = agents.filter((a) => a.health.waiting > 0).map((a) => a.name + ' ' + a.health.waiting);
-  const tiles = [
+  const tiles: { label: string; value: number; sub: string; extra?: ReactNode }[] = [
     {
       label: 'Agents',
       value: agents.length,
+      extra: running.length ? <Stack names={running.map((a) => a.name)} /> : undefined,
       sub: withSessions === 1 ? '1 has sessions running' : withSessions + ' have sessions running',
     },
     {
@@ -123,13 +125,31 @@ function Stats({ overview, now }: { overview: Overview; now: number }) {
           <div key={t.label} className="stat">
             <dt>{t.label}</dt>
             <dd>
-              <span className="stat-value">{t.value}</span>
+              <span className="stat-value-row">
+                <span className="stat-value">{t.value}</span>
+                {t.extra}
+              </span>
               <span className="stat-sub">{t.sub}</span>
             </dd>
           </div>
         ))}
       </dl>
     </section>
+  );
+}
+
+/** Overlapping icons of the agents that have sessions running. */
+function Stack({ names }: { names: string[] }) {
+  const MAX = 5;
+  const shown = names.slice(0, MAX);
+  const more = names.length - shown.length;
+  return (
+    <span className="tile-stack" title={names.join(', ') + (names.length === 1 ? ' has' : ' have') + ' sessions running'}>
+      {shown.map((n) => (
+        <AgentTile key={n} name={n} size={30} ring />
+      ))}
+      {more > 0 && <span className="tile-stack-more">+{more}</span>}
+    </span>
   );
 }
 
