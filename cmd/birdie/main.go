@@ -24,7 +24,6 @@ import (
 	"birdie/internal/adapter"
 	"birdie/internal/bus"
 	"birdie/internal/client"
-	"birdie/internal/httpapi"
 	"birdie/internal/mcpserver"
 	"birdie/internal/store"
 )
@@ -37,6 +36,7 @@ Usage:
   birdie serve [--addr 127.0.0.1:7777] [--db PATH] [--public-url URL] [--loop-limit 12]
   birdie onboard [--db PATH] [--url URL]
   birdie status [--db PATH] [--url URL]
+  birdie ui [--no-open] [--db PATH] [--url URL]
   birdie doctor [--db PATH] [--url URL]
   birdie setup claude|codex|grok|hermes|--all [--as NAME] [--remove] [--dry-run] [--wake]
   birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]
@@ -82,6 +82,8 @@ func main() {
 		err = onboard(ctx, args)
 	case "status":
 		err = statusCmd(ctx, args)
+	case "ui":
+		err = uiCmd(ctx, args)
 	case "thread":
 		err = threadCmd(ctx, args)
 	case "doctor":
@@ -204,7 +206,7 @@ func serve(ctx context.Context, args []string) error {
 
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           httpapi.New(b, logger),
+		Handler:           routes(b, st, logger, *addr),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      bus.MaxWait + 30*time.Second,
 		IdleTimeout:       2 * time.Minute,
