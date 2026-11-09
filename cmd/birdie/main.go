@@ -369,7 +369,7 @@ func inbox(ctx context.Context, args []string) error {
 
 func agentCmd(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: birdie agent add|list|rm|prompt")
+		return errors.New("usage: birdie agent add|list|label|describe|rm|prompt")
 	}
 	fs := flag.NewFlagSet("agent "+args[0], flag.ContinueOnError)
 	db := fs.String("db", defaultDB(), "SQLite database path")
@@ -377,6 +377,7 @@ func agentCmd(ctx context.Context, args []string) error {
 	authFile := fs.String("auth-file", "", "file holding the webhook's secret")
 	authHeader := fs.String("auth-header", "", "header for the secret (default Authorization: Bearer)")
 	description := fs.String("description", "", "what this agent is for, shown to other agents")
+	label := fs.String("label", "", `its name for people, such as "Claude Code" (default: NAME)`)
 	acpCmd := fs.String("acp", "", `run this ACP agent command for each message (e.g. "grok agent stdio")`)
 	cwd := fs.String("cwd", "", "working directory for the ACP agent (default: home directory)")
 	permission := fs.String("permission", "reject", "ACP tool calls that ask for approval: reject or allow")
@@ -411,6 +412,15 @@ func agentCmd(ctx context.Context, args []string) error {
 		}
 		if err := st.SetAgentConfig(ctx, pos[0], "description", strings.Join(pos[1:], " ")); err != nil {
 			return fmt.Errorf("describe %q: %w", pos[0], err)
+		}
+		fmt.Printf("updated %s\n", pos[0])
+		return nil
+	case "label":
+		if len(pos) < 2 {
+			return errors.New("usage: birdie agent label NAME LABEL")
+		}
+		if err := st.SetAgentConfig(ctx, pos[0], "label", strings.Join(pos[1:], " ")); err != nil {
+			return fmt.Errorf("label %q: %w", pos[0], err)
 		}
 		fmt.Printf("updated %s\n", pos[0])
 		return nil
@@ -504,11 +514,14 @@ func agentCmd(ctx context.Context, args []string) error {
 				a.Config["auth_header"] = *authHeader
 			}
 		}
+		if a.Config == nil {
+			a.Config = map[string]string{}
+		}
 		if *description != "" {
-			if a.Config == nil {
-				a.Config = map[string]string{}
-			}
 			a.Config["description"] = *description
+		}
+		if l := strings.TrimSpace(*label); l != "" {
+			a.Config["label"] = l
 		}
 		if err := createAgent(ctx, st, a); err != nil {
 			return err

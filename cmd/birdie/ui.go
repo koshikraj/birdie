@@ -102,7 +102,7 @@ func ensureMe(ctx context.Context, st *store.SQLite) error {
 		return err
 	}
 	a := bus.Agent{Name: webui.Me, Delivery: bus.DeliveryPull, CreatedAt: time.Now().UTC(),
-		Config: map[string]string{"description": "You, from the birdie web app or the CLI (birdie send --as me)"}}
+		Config: map[string]string{"description": "You, from the birdie web app or the CLI (birdie send --as me)", "label": "You"}}
 	if err := createAgent(ctx, st, a); err != nil {
 		return err
 	}

@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"birdie/internal/bus"
+	"birdie/internal/store"
 )
 
 func TestSetTOMLBlock(t *testing.T) {
@@ -285,5 +289,45 @@ func TestMigrateConfig(t *testing.T) {
 	migrateConfig()
 	if fi, _ := os.Lstat(filepath.Join(base, "agent-bus")); !fi.IsDir() {
 		t.Fatal("old folder was touched though the new one exists")
+	}
+}
+
+func TestEnsureAgentSavesTheLabel(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	ctx := context.Background()
+	db := filepath.Join(home, "bus.db")
+
+	// A new agent gets its tool's label, whatever it's called.
+	if err := ensureAgent(ctx, db, "reviewer", "Claude Code", "a reviewer"); err != nil {
+		t.Fatal(err)
+	}
+	// One added before birdie saved labels gets it on the next setup.
+	st, err := store.Open(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := createAgent(ctx, st, bus.Agent{Name: "old", Delivery: bus.DeliveryPull, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	if err := ensureAgent(ctx, db, "old", "Codex", "x"); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err = store.Open(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for name, want := range map[string]string{"reviewer": "Claude Code", "old": "Codex"} {
+		a, err := st.GetAgent(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Label != want {
+			t.Errorf("%s: label %q, want %q", name, a.Label, want)
+		}
 	}
 }

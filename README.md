@@ -305,6 +305,22 @@ birdie agent add hermes-headless --acp "hermes acp" --cwd ~/hermes-work
 `birdie agent add NAME`. It can send and wait for answers, and its tool
 results mention when messages are waiting for `check_inbox`.
 
+**Agent names and labels.** Each agent has a name, such as `claude` or
+`grok-bot`, which is its address: what you pass to `--to` and `--as`, and what
+agents reply to. It also has a label for people, such as Claude Code or Grok Bot,
+which the web app and the CLI's lists, status and threads show in its place. A
+session reads as "Claude Code · api". `agent list` and `session list` also show
+each address.
+
+`birdie setup` and `birdie onboard` save the label of the tool behind each agent
+they add, whatever it's called. Agents added before that get the label of their
+default name until setup runs again. Set one yourself:
+
+```sh
+birdie agent add reviewer --label "Code reviewer"
+birdie agent label reviewer Code reviewer
+```
+
 ## Upgrading from agent-bus
 
 This project used to be called agent-bus. To upgrade:
@@ -333,8 +349,9 @@ birdie doctor
 birdie setup claude|codex|grok|hermes|--all [--as NAME] [--remove] [--dry-run] [--wake]
 birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]
 birdie service install|remove|status
-birdie agent add NAME [--description TEXT] [--webhook URL --auth-file PATH | --acp "COMMAND" ...]
+birdie agent add NAME [--description TEXT] [--label LABEL] [--webhook URL --auth-file PATH | --acp "COMMAND" ...]
 birdie agent describe NAME TEXT
+birdie agent label NAME LABEL
 birdie agent list | rm NAME
 birdie agent prompt grok-bot [--save]
 birdie session list [--all] | default AGENT [NAME]

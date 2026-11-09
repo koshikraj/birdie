@@ -141,7 +141,7 @@ func setupOne(ctx context.Context, name string, o setupOptions, dry bool) error 
 		r.agent = agent // keep the name it's connected under
 	}
 	if !o.remove && !dry {
-		if err := ensureAgent(ctx, o.db, r.agent, tool.description); err != nil {
+		if err := ensureAgent(ctx, o.db, r.agent, tool.label, tool.description); err != nil {
 			return err
 		}
 	}
@@ -207,20 +207,25 @@ func detectTools() (found, missing []string) {
 	return found, missing
 }
 
-func ensureAgent(ctx context.Context, db, name, description string) error {
+// ensureAgent adds the agent for a tool, or saves the tool's label with an
+// agent added before birdie saved labels.
+func ensureAgent(ctx context.Context, db, name, label, description string) error {
 	st, err := store.Open(db)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
-	if _, err := st.GetAgent(ctx, name); err == nil {
+	if a, err := st.GetAgent(ctx, name); err == nil {
+		if a.Config["label"] == "" {
+			return st.SetAgentConfig(ctx, name, "label", label)
+		}
 		return nil
 	} else if !errors.Is(err, bus.ErrNotFound) {
 		return err
 	}
 	if err := createAgent(ctx, st, bus.Agent{
 		Name: name, Delivery: bus.DeliveryPull, CreatedAt: time.Now().UTC(),
-		Config: map[string]string{"description": description},
+		Config: map[string]string{"description": description, "label": label},
 	}); err != nil {
 		return err
 	}

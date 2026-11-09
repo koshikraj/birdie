@@ -526,7 +526,7 @@ func (w *wizard) addHeadless(h headlessAgent, cwd string) error {
 		Name: h.agent, Delivery: "acp", CreatedAt: time.Now().UTC(),
 		Config: map[string]string{
 			"command": h.command, "permission": "reject", "cwd": abs,
-			"description": h.description,
+			"description": h.description, "label": h.label,
 		},
 	})
 	if err != nil {
@@ -548,6 +548,7 @@ func (w *wizard) registerBot() error {
 		Name: botAgent, Delivery: bus.DeliveryPull, CreatedAt: time.Now().UTC(),
 		Config: map[string]string{
 			"description": "Grok Bot: personal assistant (email, calendar, web); answers in its own time",
+			"label":       "Grok Bot",
 		},
 	})
 	if err != nil {
