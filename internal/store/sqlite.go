@@ -64,6 +64,10 @@ var addedColumns = []struct{ table, column, def string }{
 	{"messages", "from_session", "TEXT NOT NULL DEFAULT ''"},
 	{"messages", "to_session", "TEXT NOT NULL DEFAULT ''"},
 	{"messages", "lease_until", "INTEGER NOT NULL DEFAULT 0"},
+	// taken_by is the session that took the message; error_at is when
+	// last_error happened.
+	{"messages", "taken_by", "TEXT NOT NULL DEFAULT ''"},
+	{"messages", "error_at", "INTEGER NOT NULL DEFAULT 0"},
 	{"sessions", "branch", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "state", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "ended_at", "INTEGER NOT NULL DEFAULT 0"},
@@ -73,6 +77,8 @@ const (
 	msgCols     = `m.id, m.thread_id, m.in_reply_to, m.sender, m.recipient, m.from_session, m.to_session, m.content, m.meta, m.status, m.attempts, m.created_at`
 	agentCols   = `a.name, a.token_hash, a.delivery, a.config, a.created_at`
 	sessionCols = `agent, id, name, cwd, branch, tier, state, active_at, last_seen, ended_at`
+	// trackCols follow msgCols for the delivery details birdie's own commands show.
+	trackCols = `COALESCE(m.delivered_at, 0), m.taken_by, m.last_error, m.error_at, m.next_attempt_at`
 )
 
 type SQLite struct{ db *sql.DB }
@@ -295,10 +301,10 @@ func (s *SQLite) ClaimInbox(ctx context.Context, f bus.ClaimFilter, now time.Tim
 	}
 	for i := range msgs {
 		if f.LeaseUntil.IsZero() {
-			_, err = tx.ExecContext(ctx, `UPDATE messages SET status = 'delivered', delivered_at = ? WHERE id = ?`, now.UnixMilli(), msgs[i].ID)
+			_, err = tx.ExecContext(ctx, `UPDATE messages SET status = 'delivered', delivered_at = ?, taken_by = ? WHERE id = ?`, now.UnixMilli(), f.Session, msgs[i].ID)
 			msgs[i].Status = bus.StatusDelivered
 		} else {
-			_, err = tx.ExecContext(ctx, `UPDATE messages SET status = 'claimed', lease_until = ? WHERE id = ?`, f.LeaseUntil.UnixMilli(), msgs[i].ID)
+			_, err = tx.ExecContext(ctx, `UPDATE messages SET status = 'claimed', lease_until = ?, taken_by = ? WHERE id = ?`, f.LeaseUntil.UnixMilli(), f.Session, msgs[i].ID)
 			msgs[i].Status = bus.StatusClaimed
 		}
 		if err != nil {
@@ -452,9 +458,151 @@ func (s *SQLite) RecordFailure(ctx context.Context, id, errMsg string, next time
 		status = bus.StatusFailed
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE messages SET attempts = attempts + 1, last_error = ?, next_attempt_at = ?, status = ? WHERE id = ?`,
-		errMsg, next.UnixMilli(), status, id)
+		`UPDATE messages SET attempts = attempts + 1, last_error = ?, error_at = ?, next_attempt_at = ?, status = ? WHERE id = ?`,
+		errMsg, time.Now().UnixMilli(), next.UnixMilli(), status, id)
 	return err
+}
+
+// Delivery sums up how messages to one agent are getting through.
+type Delivery struct {
+	// Waiting counts messages the agent hasn't got yet. Oldest is when the
+	// oldest of them was sent.
+	Waiting int
+	Oldest  time.Time
+	// Delivered is when a message last reached the agent.
+	Delivered time.Time
+	// Error is why the latest try failed, at ErrorAt, when no message has got
+	// through since. ErrorID is the message tried. Retry is when the next try
+	// is due; it is zero when birdie gave up on that message.
+	Error   string
+	ErrorID string
+	ErrorAt time.Time
+	Retry   time.Time
+	// GaveUp counts messages birdie stopped trying to deliver since the time
+	// asked about.
+	GaveUp int
+}
+
+// Deliveries sums up delivery to each agent that has been sent a message,
+// counting messages given up on since a time.
+func (s *SQLite) Deliveries(ctx context.Context, since time.Time) (map[string]Delivery, error) {
+	out, err := s.deliveryCounts(ctx, since)
+	if err != nil {
+		return nil, err
+	}
+	return out, s.addFailures(ctx, out)
+}
+
+func (s *SQLite) deliveryCounts(ctx context.Context, since time.Time) (map[string]Delivery, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT recipient,
+			COALESCE(SUM(status IN ('queued', 'claimed')), 0),
+			COALESCE(MIN(CASE WHEN status IN ('queued', 'claimed') THEN created_at END), 0),
+			COALESCE(MAX(delivered_at), 0),
+			COALESCE(SUM(status = 'failed' AND error_at >= ?), 0)
+		FROM messages GROUP BY recipient`, since.UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]Delivery{}
+	for rows.Next() {
+		var name string
+		var d Delivery
+		var oldest, delivered int64
+		if err := rows.Scan(&name, &d.Waiting, &oldest, &delivered, &d.GaveUp); err != nil {
+			return nil, err
+		}
+		d.Oldest, d.Delivered = unixMilli(oldest), unixMilli(delivered)
+		out[name] = d
+	}
+	return out, rows.Err()
+}
+
+// addFailures records each agent's latest failure, if nothing got through
+// after it.
+func (s *SQLite) addFailures(ctx context.Context, out map[string]Delivery) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT recipient, id, last_error, error_at, status, next_attempt_at FROM messages
+		WHERE last_error != '' AND error_at > 0 AND status IN ('queued', 'failed') ORDER BY error_at`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, id, msg, status string
+		var at, next int64
+		if err := rows.Scan(&name, &id, &msg, &at, &status, &next); err != nil {
+			return err
+		}
+		d := out[name]
+		if t := unixMilli(at); t.After(d.Delivered) {
+			d.Error, d.ErrorID, d.ErrorAt, d.Retry = msg, id, t, time.Time{}
+			if status == bus.StatusQueued {
+				d.Retry = unixMilli(next)
+			}
+			out[name] = d
+		}
+	}
+	return rows.Err()
+}
+
+// Tracked is a message with how its delivery went.
+type Tracked struct {
+	bus.Message
+	// Delivered is when the recipient got it, and TakenBy the session that
+	// took it, if one did.
+	Delivered time.Time
+	TakenBy   string
+	// Error is why the latest try failed, at ErrorAt. Retry is when the next
+	// try is due while it is queued.
+	Error   string
+	ErrorAt time.Time
+	Retry   time.Time
+}
+
+func collectTracked(rows *sql.Rows, err error) ([]Tracked, error) {
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Tracked{}
+	for rows.Next() {
+		var t Tracked
+		var meta string
+		var created, delivered, errorAt, next int64
+		m := &t.Message
+		if err := rows.Scan(&m.ID, &m.ThreadID, &m.InReplyTo, &m.From, &m.To, &m.FromSession, &m.ToSession, &m.Content, &meta, &m.Status, &m.Attempts, &created,
+			&delivered, &t.TakenBy, &t.Error, &errorAt, &next); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(meta), &m.Meta); err != nil {
+			return nil, err
+		}
+		m.CreatedAt = time.UnixMilli(created).UTC()
+		t.Delivered, t.ErrorAt = unixMilli(delivered), unixMilli(errorAt)
+		if m.Status == bus.StatusQueued && t.Error != "" {
+			t.Retry = unixMilli(next)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// TrackThread returns every message in a thread, whoever sent it, oldest first.
+func (s *SQLite) TrackThread(ctx context.Context, threadID string) ([]Tracked, error) {
+	return collectTracked(s.db.QueryContext(ctx,
+		`SELECT `+msgCols+`, `+trackCols+` FROM messages m WHERE m.thread_id = ? ORDER BY m.seq`, threadID))
+}
+
+// Waiting returns up to limit messages that haven't reached their recipient
+// yet, oldest first, and how many there are in all.
+func (s *SQLite) Waiting(ctx context.Context, limit int) ([]Tracked, int, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE status IN ('queued', 'claimed')`).Scan(&n); err != nil {
+		return nil, 0, err
+	}
+	msgs, err := collectTracked(s.db.QueryContext(ctx,
+		`SELECT `+msgCols+`, `+trackCols+` FROM messages m WHERE m.status IN ('queued', 'claimed') ORDER BY m.seq LIMIT ?`, limit))
+	return msgs, n, err
 }
 
 // GetState returns adapter state saved under key, or bus.ErrNotFound.
