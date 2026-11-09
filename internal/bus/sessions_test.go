@@ -165,6 +165,39 @@ func TestSessionsSayWhatTheyAreDoing(t *testing.T) {
 	}
 }
 
+func TestClosedSessionsAreListedAfterRunningOnes(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	addAgent(t, st, "claude", nil)
+	now := time.Now()
+	report(t, b, "claude", "old", "old", bus.TierPush, now.Add(-time.Hour))
+	report(t, b, "claude", "gone", "gone", bus.TierPush, now)
+	report(t, b, "claude", "new", "new", bus.TierPush, now.Add(-time.Minute))
+	if err := b.EndSession(ctx, "claude", "gone"); err != nil {
+		t.Fatal(err)
+	}
+
+	a, _ := st.GetAgent(ctx, "claude")
+	live, err := b.Sessions(ctx, a)
+	if err != nil || len(live) != 2 {
+		t.Fatalf("live = %+v, %v", live, err)
+	}
+	recent, err := b.RecentSessions(ctx, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, s := range recent {
+		order = append(order, s.ID)
+	}
+	if strings.Join(order, " ") != "new old gone" {
+		t.Fatalf("order = %v", order)
+	}
+	if !recent[0].Default || recent[2].Live(time.Now()) || recent[2].EndedAt.IsZero() {
+		t.Fatalf("recent = %+v", recent)
+	}
+}
+
 func TestAddressingOneSession(t *testing.T) {
 	ctx := context.Background()
 	b, st := newBus(t)

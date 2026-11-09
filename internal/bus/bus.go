@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -24,9 +25,11 @@ const (
 
 	// SessionTTL is how long a session counts as running after it last
 	// reported. Sessions report every SessionBeat.
-	SessionTTL     = 90 * time.Second
-	SessionBeat    = 30 * time.Second
-	maxBranchBytes = 255
+	SessionTTL  = 90 * time.Second
+	SessionBeat = 30 * time.Second
+	// SessionRetention is how long a session is remembered after it stops.
+	SessionRetention = 24 * time.Hour
+	maxBranchBytes   = 255
 
 	// DefaultLoopLimit messages from one agent to another within LoopWindow
 	// probably means they are stuck answering each other.
@@ -88,6 +91,16 @@ func (b *Bus) Authenticate(ctx context.Context, token string) (Agent, error) {
 
 // Agents lists every agent with its running sessions.
 func (b *Bus) Agents(ctx context.Context) ([]Agent, error) {
+	return b.listAgents(ctx, b.Sessions)
+}
+
+// AgentsWithRecentSessions lists every agent with its sessions from the last
+// day, as RecentSessions returns them.
+func (b *Bus) AgentsWithRecentSessions(ctx context.Context) ([]Agent, error) {
+	return b.listAgents(ctx, b.RecentSessions)
+}
+
+func (b *Bus) listAgents(ctx context.Context, sessions func(context.Context, Agent) ([]Session, error)) ([]Agent, error) {
 	agents, err := b.store.ListAgents(ctx)
 	if err != nil {
 		return nil, err
@@ -96,7 +109,7 @@ func (b *Bus) Agents(ctx context.Context) ([]Agent, error) {
 		if agents[i].Delivery != DeliveryPull {
 			continue
 		}
-		if agents[i].Sessions, err = b.Sessions(ctx, agents[i]); err != nil {
+		if agents[i].Sessions, err = sessions(ctx, agents[i]); err != nil {
 			return nil, err
 		}
 	}
@@ -113,6 +126,29 @@ func (b *Bus) Sessions(ctx context.Context, a Agent) ([]Session, error) {
 		d.Default = true
 	}
 	return live, nil
+}
+
+// RecentSessions returns the agent's sessions from the last day: the running
+// ones as Sessions returns them, then the ones that stopped, latest first.
+func (b *Bus) RecentSessions(ctx context.Context, a Agent) ([]Session, error) {
+	now := time.Now()
+	all, err := b.store.RecentSessions(ctx, a.Name, now.Add(-SessionRetention))
+	if err != nil {
+		return nil, err
+	}
+	var live, stopped []Session
+	for _, s := range all {
+		if s.Live(now) {
+			live = append(live, s)
+		} else {
+			stopped = append(stopped, s)
+		}
+	}
+	if d := defaultSession(live, a.Config["default_session"]); d != nil {
+		d.Default = true
+	}
+	slices.SortStableFunc(stopped, func(x, y Session) int { return y.StoppedAt().Compare(x.StoppedAt()) })
+	return append(live, stopped...), nil
 }
 
 // defaultSession picks the session that takes new conversations: the one with
@@ -180,9 +216,10 @@ func (b *Bus) ReportSession(ctx context.Context, agent, id string, in SessionInp
 	return nil
 }
 
-// EndSession forgets a session, so waiting messages move on without delay.
+// EndSession records that a session closed, so its waiting messages move on
+// without delay.
 func (b *Bus) EndSession(ctx context.Context, agent, id string) error {
-	if err := b.store.DeleteSession(ctx, agent, id); err != nil {
+	if err := b.store.EndSession(ctx, agent, id, time.Now().UTC()); err != nil {
 		return err
 	}
 	b.notify(agent)

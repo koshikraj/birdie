@@ -66,15 +66,13 @@ var addedColumns = []struct{ table, column, def string }{
 	{"messages", "lease_until", "INTEGER NOT NULL DEFAULT 0"},
 	{"sessions", "branch", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "state", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "ended_at", "INTEGER NOT NULL DEFAULT 0"},
 }
-
-// sessionRetention is how long a session that stopped reporting is remembered.
-const sessionRetention = 24 * time.Hour
 
 const (
 	msgCols     = `m.id, m.thread_id, m.in_reply_to, m.sender, m.recipient, m.from_session, m.to_session, m.content, m.meta, m.status, m.attempts, m.created_at`
 	agentCols   = `a.name, a.token_hash, a.delivery, a.config, a.created_at`
-	sessionCols = `agent, id, name, cwd, branch, tier, state, active_at, last_seen`
+	sessionCols = `agent, id, name, cwd, branch, tier, state, active_at, last_seen, ended_at`
 )
 
 type SQLite struct{ db *sql.DB }
@@ -272,7 +270,7 @@ func inboxWhere(f bus.ClaimFilter, now time.Time) (string, []any) {
 		if f.Unpinned {
 			// Mail for a session that has gone falls to this one too.
 			q += ` AND (m.to_session = ? OR m.to_session = '' OR m.to_session NOT IN
-				(SELECT id FROM sessions WHERE agent = ? AND last_seen >= ?))`
+				(SELECT id FROM sessions WHERE agent = ? AND last_seen >= ? AND ended_at = 0))`
 			args = append(args, f.Session, f.Agent, f.LiveSince.UnixMilli())
 		} else {
 			q += ` AND m.to_session = ?`
@@ -396,24 +394,32 @@ func (s *SQLite) ReleaseOutbound(ctx context.Context) error {
 }
 
 func (s *SQLite) UpsertSession(ctx context.Context, ses bus.Session) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE last_seen < ?`, ses.LastSeen.Add(-sessionRetention).UnixMilli()); err != nil {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE last_seen < ?`, ses.LastSeen.Add(-bus.SessionRetention).UnixMilli()); err != nil {
 		return err
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions (agent, id, name, cwd, branch, tier, state, active_at, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(agent, id) DO UPDATE SET name = excluded.name, cwd = excluded.cwd, branch = excluded.branch, tier = excluded.tier,
-			state = excluded.state, active_at = MAX(active_at, excluded.active_at), last_seen = excluded.last_seen`,
+			state = excluded.state, active_at = MAX(active_at, excluded.active_at), last_seen = excluded.last_seen, ended_at = 0`,
 		ses.Agent, ses.ID, ses.Name, ses.Cwd, ses.Branch, ses.Tier, ses.State, ses.ActiveAt.UnixMilli(), ses.LastSeen.UnixMilli())
 	return err
 }
 
-func (s *SQLite) DeleteSession(ctx context.Context, agent, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE agent = ? AND id = ?`, agent, id)
+func (s *SQLite) EndSession(ctx context.Context, agent, id string, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET ended_at = ? WHERE agent = ? AND id = ?`, at.UnixMilli(), agent, id)
 	return err
 }
 
 func (s *SQLite) LiveSessions(ctx context.Context, agent string, since time.Time) ([]bus.Session, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+sessionCols+` FROM sessions
-		WHERE agent = ? AND last_seen >= ? ORDER BY active_at DESC, id`, agent, since.UnixMilli())
+	return collectSessions(s.db.QueryContext(ctx, `SELECT `+sessionCols+` FROM sessions
+		WHERE agent = ? AND last_seen >= ? AND ended_at = 0 ORDER BY active_at DESC, id`, agent, since.UnixMilli()))
+}
+
+func (s *SQLite) RecentSessions(ctx context.Context, agent string, since time.Time) ([]bus.Session, error) {
+	return collectSessions(s.db.QueryContext(ctx, `SELECT `+sessionCols+` FROM sessions
+		WHERE agent = ? AND last_seen >= ? ORDER BY active_at DESC, id`, agent, since.UnixMilli()))
+}
+
+func collectSessions(rows *sql.Rows, err error) ([]bus.Session, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -421,14 +427,23 @@ func (s *SQLite) LiveSessions(ctx context.Context, agent string, since time.Time
 	var out []bus.Session
 	for rows.Next() {
 		var ses bus.Session
-		var active, seen int64
-		if err := rows.Scan(&ses.Agent, &ses.ID, &ses.Name, &ses.Cwd, &ses.Branch, &ses.Tier, &ses.State, &active, &seen); err != nil {
+		var active, seen, ended int64
+		if err := rows.Scan(&ses.Agent, &ses.ID, &ses.Name, &ses.Cwd, &ses.Branch, &ses.Tier, &ses.State, &active, &seen, &ended); err != nil {
 			return nil, err
 		}
 		ses.ActiveAt, ses.LastSeen = time.UnixMilli(active).UTC(), time.UnixMilli(seen).UTC()
+		ses.EndedAt = unixMilli(ended)
 		out = append(out, ses)
 	}
 	return out, rows.Err()
+}
+
+// unixMilli reads a time stored as milliseconds, where 0 means none.
+func unixMilli(ms int64) time.Time {
+	if ms == 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms).UTC()
 }
 
 func (s *SQLite) RecordFailure(ctx context.Context, id, errMsg string, next time.Time, failed bool) error {
