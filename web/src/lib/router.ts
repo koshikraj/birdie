@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 export type Route =
   | { page: 'dashboard' }
-  | { page: 'agents'; section?: 'send' | 'add' }
+  | { page: 'agents'; section?: 'send' | 'add'; to?: string }
   | { page: 'messages'; id?: string };
 
 export function parseHash(hash: string): Route {
@@ -15,6 +15,7 @@ export function parseHash(hash: string): Route {
     }
   });
   if (parts[0] === 'agents') {
+    if (parts[1] === 'to' && parts[2]) return { page: 'agents', to: parts[2] };
     const section = parts[1] === 'send' || parts[1] === 'add' ? parts[1] : undefined;
     return { page: 'agents', section };
   }
@@ -27,6 +28,8 @@ export const href = {
   agents: '#/agents',
   send: '#/agents/send',
   add: '#/agents/add',
+  /** The Agents page with that agent picked to message. */
+  agent: (name: string) => '#/agents/to/' + encodeURIComponent(name),
   messages: '#/messages',
   thread: (id: string) => '#/messages/' + encodeURIComponent(id),
 };

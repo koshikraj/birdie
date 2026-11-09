@@ -128,6 +128,11 @@ function logoFrame(u: number) {
   };
 }
 
+/** Opens the Agents page with that agent picked to message. */
+function openAgent(name: string) {
+  window.location.hash = href.agent(name);
+}
+
 function short(name: string, n = 16) {
   return name.length > n ? name.slice(0, n - 1) + '…' : name;
 }
@@ -474,7 +479,7 @@ export function Scene({ overview, recent }: Props) {
           {birds.map((b) => (
             <li key={b.pl.name} className={b.grey ? 'is-grey' : undefined}>
               <AgentTile name={b.pl.name} size={34} />
-              <span className="scene-compact-name">{b.pl.name}</span>
+              <a className="scene-compact-name" href={href.agent(b.pl.name)}>{b.pl.name}</a>
               <span className="scene-compact-detail">{b.detail}</span>
               {b.role && <span className="scene-compact-role">{b.role}</span>}
             </li>
@@ -561,6 +566,7 @@ export function Scene({ overview, recent }: Props) {
                 className={'scene-bird' + (b.grey ? ' scene-grey' : '')}
                 onPointerEnter={() => setHovered(pl.name)}
                 onPointerLeave={() => setHovered((h) => (h === pl.name ? null : h))}
+                onClick={() => openAgent(pl.name)}
               >
                 <rect x={-58} y={-100} width={116} height={104} className="scene-hit" />
                 <BirdBody id={pl.id} look={b.look} face={pl.face} shut={b.shut} clipId={clipId} />
@@ -580,7 +586,7 @@ export function Scene({ overview, recent }: Props) {
           )}
 
           {birds.map((b) => (
-            <g key={'label-' + b.pl.name}>
+            <g key={'label-' + b.pl.name} className="scene-label" onClick={() => openAgent(b.pl.name)}>
               <NameLabel x={b.pl.x} y={b.pl.y + 32} name={short(b.pl.name)} id={b.pl.id} clipId={clipId + '-mini'} />
               <text x={b.pl.x} y={b.pl.y + 52} textAnchor="middle" className={b.problem ? 'scene-detail scene-detail-problem' : 'scene-detail'}>{b.detail}</text>
               <text x={b.pl.x} y={b.pl.y + 74} textAnchor="middle" className="scene-role">{b.role}</text>

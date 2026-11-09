@@ -25,7 +25,7 @@ import { errorText } from '../lib/status';
 import { ago, ms, span, until, useNow } from '../lib/time';
 import { Signal } from '../components/Signal';
 
-export function AgentsPage({ section }: { section?: 'send' | 'add' }) {
+export function AgentsPage({ section, to: pickTo }: { section?: 'send' | 'add'; to?: string }) {
   const overview = useOverview();
   const o = overview.data;
   const now = useNow();
@@ -40,6 +40,16 @@ export function AgentsPage({ section }: { section?: 'send' | 'add' }) {
     el?.scrollIntoView({ block: 'start' });
     if (section === 'send') document.getElementById('send-to')?.focus({ preventScroll: true });
   }, [section, !!o]);
+
+  // Opened from an agent in the live scene: pick it to message, and show its card.
+  useEffect(() => {
+    if (!pickTo || !o) return;
+    setTo(pickTo);
+    setPicked(pickTo);
+    const card = document.getElementById(cardId(pickTo));
+    card?.scrollIntoView({ block: 'center' });
+    textRef.current?.focus({ preventScroll: true });
+  }, [pickTo, !!o]);
 
   const pick = (name: string) => {
     setTo(name);
@@ -114,6 +124,10 @@ export function AgentsPage({ section }: { section?: 'send' | 'add' }) {
   );
 }
 
+function cardId(name: string): string {
+  return 'agent-' + name.replace(/[^a-zA-Z0-9_-]/g, '-');
+}
+
 function AgentCard({
   agent: a,
   me,
@@ -135,13 +149,13 @@ function AgentCard({
   const h = a.health;
   const live = liveSessions(a);
   const sessions = showStopped ? a.sessions : live;
-  const headingId = 'agent-' + a.name.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const headingId = cardId(a.name) + '-name';
   const known = id.product !== a.name;
   const description =
     a.description || (a.name === me ? 'You, in this web app. Messages you send here come from ' + me + '.' : known ? id.product + ' on this machine.' : '');
   const oldest = ms(h.oldest);
   return (
-    <article aria-labelledby={headingId} className={'agent-card' + (picked ? ' is-picked' : '') + (h.error ? ' is-problem' : '')}>
+    <article id={cardId(a.name)} aria-labelledby={headingId} className={'agent-card' + (picked ? ' is-picked' : '') + (h.error ? ' is-problem' : '')}>
       <div className="agent-card-top">
         <div className="agent-stage">
           <LoopBird name={a.name} className="agent-stage-bird" />

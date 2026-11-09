@@ -101,7 +101,7 @@ function SignedIn() {
       <Banner />
       <main id="main" tabIndex={-1} className="app-main">
         {route.page === 'dashboard' && <DashboardPage />}
-        {route.page === 'agents' && <AgentsPage section={route.section} />}
+        {route.page === 'agents' && <AgentsPage section={route.section} to={route.to} />}
         {route.page === 'messages' && <MessagesPage id={route.id} />}
       </main>
       <Footer version={overview.data?.version} />

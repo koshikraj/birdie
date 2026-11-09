@@ -73,6 +73,11 @@
 .scene-letter { font-family: var(--font-mono); font-size: 34px; font-weight: 500; }
 .scene-mini-letter { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
 .scene-mini-edge { fill: none; stroke: var(--bird-line); stroke-opacity: 0.18; }
+.scene-bird, .scene-label { cursor: pointer; }
+.scene-compact li { position: relative; }
+.scene-compact-name { color: inherit; text-decoration: none; }
+.scene-compact-name::after { content: ''; position: absolute; inset: 0; }
+.scene-compact li:hover .scene-compact-name { color: var(--accent); }
 .scene-hit { fill: transparent; pointer-events: all; }
 .scene-terminal { fill: none; stroke: #FFFFFF; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 /* An agent whose deliveries fail is grey: inactive, but not asleep. */
