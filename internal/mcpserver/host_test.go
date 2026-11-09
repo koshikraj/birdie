@@ -130,13 +130,19 @@ func TestClaudeSessionComesFromRegistry(t *testing.T) {
 	if got := h.Session().ID; got != "from-env" {
 		t.Fatalf("no entry yet: id = %q", got)
 	}
-	write(`{"sessionId":"abc","cwd":"/home/me/My Repo","name":"Fix the login bug please","nameSource":"auto","status":"idle","messagingSocketPath":"/run/x.sock"}`)
+	write(`{"sessionId":"abc","cwd":"/home/me/My Repo","name":"Fix the login bug please","nameSource":"auto","status":"idle","statusUpdatedAt":1700000000000,"messagingSocketPath":"/run/x.sock"}`)
 	s := h.Session()
-	if s.ID != "abc" || s.Name != "my-repo" {
+	if s.ID != "abc" || s.Name != "my-repo" || s.State != bus.StateIdle || s.ActiveAt.UnixMilli() != 1700000000000 {
 		t.Fatalf("session = %+v", s)
 	}
 	if h.Tier() != bus.TierPush {
 		t.Fatalf("socket from the registry should allow push: %s", h.Tier())
+	}
+	for status, want := range map[string]string{"busy": bus.StateBusy, "waiting": bus.StateWaiting, "something new": ""} {
+		write(`{"sessionId":"abc","status":"` + status + `"}`)
+		if got := h.Session().State; got != want {
+			t.Errorf("status %q: state = %q, want %q", status, got, want)
+		}
 	}
 	// A chosen name wins, and /clear moves the session to a new id.
 	write(`{"sessionId":"def","cwd":"/home/me/My Repo","name":"Listener","nameSource":"user"}`)

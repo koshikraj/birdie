@@ -136,6 +136,68 @@ func TestAnswersGoBackToTheSessionThatAsked(t *testing.T) {
 	}
 }
 
+func TestSessionsSayWhatTheyAreDoing(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	addAgent(t, st, "claude", nil)
+	for id, in := range map[string]bus.SessionInput{
+		"s1": {Name: "api", State: bus.StateWaiting, Branch: "fix/login"},
+		"s2": {Name: "web", State: "dreaming", Branch: "bad\x1b[31m"},
+	} {
+		if err := b.ReportSession(ctx, "claude", id, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	agents, err := b.Agents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bus.Session{}
+	for _, s := range agents[0].Sessions {
+		got[s.ID] = s
+	}
+	if s := got["s1"]; s.State != bus.StateWaiting || s.Branch != "fix/login" {
+		t.Fatalf("s1 = %+v", s)
+	}
+	// What this version can't use is dropped, not refused.
+	if s := got["s2"]; s.State != "" || s.Branch != "" {
+		t.Fatalf("s2 = %+v", s)
+	}
+}
+
+func TestClosedSessionsAreListedAfterRunningOnes(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	addAgent(t, st, "claude", nil)
+	now := time.Now()
+	report(t, b, "claude", "old", "old", bus.TierPush, now.Add(-time.Hour))
+	report(t, b, "claude", "gone", "gone", bus.TierPush, now)
+	report(t, b, "claude", "new", "new", bus.TierPush, now.Add(-time.Minute))
+	if err := b.EndSession(ctx, "claude", "gone"); err != nil {
+		t.Fatal(err)
+	}
+
+	a, _ := st.GetAgent(ctx, "claude")
+	live, err := b.Sessions(ctx, a)
+	if err != nil || len(live) != 2 {
+		t.Fatalf("live = %+v, %v", live, err)
+	}
+	recent, err := b.RecentSessions(ctx, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, s := range recent {
+		order = append(order, s.ID)
+	}
+	if strings.Join(order, " ") != "new old gone" {
+		t.Fatalf("order = %v", order)
+	}
+	if !recent[0].Default || recent[2].Live(time.Now()) || recent[2].EndedAt.IsZero() {
+		t.Fatalf("recent = %+v", recent)
+	}
+}
+
 func TestAddressingOneSession(t *testing.T) {
 	ctx := context.Background()
 	b, st := newBus(t)

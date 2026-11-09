@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net"
@@ -18,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"text/tabwriter"
 	"time"
 
 	"birdie/internal/adapter"
@@ -36,6 +36,7 @@ const usage = `birdie — two-way messaging between agents
 Usage:
   birdie serve [--addr 127.0.0.1:7777] [--db PATH] [--public-url URL] [--loop-limit 12]
   birdie onboard [--db PATH] [--url URL]
+  birdie status [--db PATH] [--url URL]
   birdie doctor [--db PATH] [--url URL]
   birdie setup claude|codex|grok|hermes|--all [--as NAME] [--remove] [--dry-run] [--wake]
   birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]
@@ -47,11 +48,12 @@ Usage:
   birdie agent list
   birdie agent rm NAME
   birdie agent prompt grok-bot [--save] [--url URL]
-  birdie session list
+  birdie session list [--all]
   birdie session default AGENT [NAME]
   birdie send --as NAME --to AGENT[/SESSION] [--thread ID] [--context TEXT] [--wanted TEXT] MESSAGE
   birdie reply --as NAME MSG_ID MESSAGE
   birdie inbox --as NAME [--wait 30s] [--thread ID]
+  birdie thread THREAD_ID|MSG_ID [--full]
   birdie version
 
 Each agent's token is stored in %s/<name> (mode 0600).
@@ -78,6 +80,10 @@ func main() {
 		err = runMCP(ctx, args)
 	case "onboard":
 		err = onboard(ctx, args)
+	case "status":
+		err = statusCmd(ctx, args)
+	case "thread":
+		err = threadCmd(ctx, args)
 	case "doctor":
 		err = doctor(ctx, args)
 	case "setup":
@@ -388,16 +394,15 @@ func agentCmd(ctx context.Context, args []string) error {
 
 	switch args[0] {
 	case "list":
-		agents, err := st.ListAgents(ctx)
+		agents, err := bus.New(st, slog.New(slog.NewTextHandler(io.Discard, nil))).Agents(ctx)
 		if err != nil {
 			return err
 		}
-		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "NAME\tDELIVERY\tCREATED\tDESCRIPTION")
-		for _, a := range agents {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Name, a.Delivery, a.CreatedAt.Local().Format(time.DateTime), a.Description)
+		deliveries, err := st.Deliveries(ctx, time.Now().Add(-problemWindow))
+		if err != nil {
+			return err
 		}
-		return tw.Flush()
+		return printAgents(os.Stdout, agents, deliveries, true, time.Now())
 	case "describe":
 		if len(pos) < 2 {
 			return errors.New("usage: birdie agent describe NAME TEXT")
