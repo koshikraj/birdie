@@ -209,3 +209,27 @@
 .msg-status { font-family: var(--font-mono); font-size: 12px; color: var(--ink-muted); overflow-wrap: anywhere; }
 .msg-status.is-problem { color: var(--danger); }
 .send-form { display: flex; flex-direction: column; gap: 16px; }
+
+/* The courier: the birdie flying a message from the live scene to the feed. */
+.courier { position: fixed; inset: 0; z-index: 50; pointer-events: none; overflow: hidden; }
+.courier-bird, .courier-tile, .courier-bit { position: absolute; left: 0; top: 0; will-change: transform; }
+.courier-bird { opacity: 0; filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.18)); }
+.courier-bird svg { display: block; overflow: visible; }
+.courier-wing { transform-box: fill-box; transform-origin: 75% 40%; animation: courier-flap 0.16s ease-in-out infinite alternate; }
+@keyframes courier-flap { from { transform: rotate(-38deg); } to { transform: rotate(24deg); } }
+.courier-tile { opacity: 0; }
+.courier-tile .agent-tile { display: flex; }
+.courier-tile-front { z-index: 1; }
+.courier-bit { width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--bird-dot); }
+.courier-bit-dash { width: 5px; height: 12px; margin: -6px 0 0 -2.5px; border-radius: 3px; background: var(--bird-dash); }
+
+/* A card the courier brought: it opens under the icons, which the courier holds until they settle. */
+.feed li.feed-pop { animation: feed-open 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; overflow: hidden; }
+.feed li.feed-pop .tile-pair { visibility: hidden; }
+.feed li.feed-pop .feed-body { animation: feed-body-in 0.35s 0.45s ease-out backwards; }
+.feed li.feed-in { animation: feed-body-in 0.35s ease-out backwards; }
+@keyframes feed-open { from { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0.4; } to { max-height: 200px; } }
+@keyframes feed-body-in { from { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) {
+  .feed li.feed-pop, .feed li.feed-pop .feed-body, .feed li.feed-in { animation: none; }
+}

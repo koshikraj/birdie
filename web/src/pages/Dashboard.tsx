@@ -1,7 +1,10 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOverview, useRecentMessages } from '../api/hooks';
 import type { Agent, Overview, Session, Tracked } from '../api/types';
 import { AgentTile } from '../components/AgentTile';
+import { CourierFlight, type Run } from '../components/CourierFlight';
+import { useBusEvent } from '../api/events';
+import { courier } from '../lib/courier';
 import { SessionStateMark, StatusChip } from '../components/bits';
 import { agentOf, agentsOf, identity, liveSessions, sessionAddress, who } from '../lib/agents';
 import { href } from '../lib/router';
@@ -156,10 +159,76 @@ function Stack({ names }: { names: string[] }) {
   );
 }
 
+/** How long a new message waits for its letter before it shows anyway. */
+const HOLD_MAX = 15000;
+
 function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loading: boolean; failed: boolean; now: number }) {
-  const shown = (messages ?? []).slice(0, 6);
+  const box = useRef<HTMLElement>(null);
+  // New messages wait here while the live scene plays their letter.
+  const [held, setHeld] = useState<ReadonlySet<string>>(() => new Set());
+  const heldRef = useRef(held);
+  heldRef.current = held;
+  // Cards that just came in, and how: brought by the courier, or just shown.
+  const [entering, setEntering] = useState<ReadonlyMap<string, 'pop' | 'in'>>(() => new Map());
+  const [runs, setRuns] = useState<Run[]>([]);
+  const timers = useRef(new Map<string, number>());
+
+  const mark = (id: string, how: 'pop' | 'in' | null) =>
+    setEntering((m) => {
+      const next = new Map(m);
+      if (how) next.set(id, how);
+      else next.delete(id);
+      return next;
+    });
+  const release = (id: string, how: 'pop' | 'in') => {
+    window.clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+    if (!heldRef.current.has(id)) return;
+    setHeld((h) => {
+      const next = new Set(h);
+      next.delete(id);
+      return next;
+    });
+    mark(id, how);
+    if (how === 'in') window.setTimeout(() => mark(id, null), 400);
+  };
+
+  useBusEvent((e) => {
+    if (e.kind !== 'message' || e.type !== 'queued' || !courier.active) return;
+    setHeld((h) => new Set(h).add(e.id));
+    timers.current.set(e.id, window.setTimeout(() => release(e.id, 'in'), HOLD_MAX));
+  });
+  useEffect(() => courier.onDrop((id) => release(id, 'in')), []);
+  useEffect(
+    () =>
+      courier.onActive((on) => {
+        if (!on) heldRef.current.forEach((id) => release(id, 'in'));
+      }),
+    [],
+  );
+  useEffect(
+    () =>
+      courier.onPass((p) => {
+        if (!heldRef.current.has(p.id)) return;
+        window.clearTimeout(timers.current.get(p.id));
+        setRuns((r) => [
+          ...r,
+          {
+            id: p.id,
+            from: p.from,
+            to: p.to,
+            start: { x: p.rect.left + p.rect.width / 2, y: p.rect.top + p.rect.height / 2 },
+            land: () => landing(box.current),
+          },
+        ]);
+      }),
+    [],
+  );
+  useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
+
+  const shown = (messages ?? []).filter((m) => !held.has(m.id)).slice(0, 6);
   return (
-    <section aria-labelledby="feed-title" className="panel feed">
+    <section ref={box} aria-labelledby="feed-title" className="panel feed">
       <div className="panel-head">
         <h2 id="feed-title" className="panel-title">Live messages</h2>
         <a href={href.messages} className="panel-link">All messages</a>
@@ -172,28 +241,52 @@ function Feed({ messages, loading, failed, now }: { messages?: Tracked[]; loadin
         )
       ) : (
         <ol>
-          {shown.map((m) => (
-            <li key={m.id}>
-              <div className="tile-pair">
-                <AgentTile name={agentOf(m.from)} size={34} ring />
-                <AgentTile name={agentOf(m.to)} size={34} ring />
-              </div>
-              <div className="feed-body">
-                <div className="feed-meta">
-                  <a className="feed-route" href={href.thread(m.thread_id || m.id)}>
-                    {who(m.from_label)} → {who(m.to_label)}
-                  </a>
-                  <span className="feed-when">{ago(m.created_at, now)}</span>
+          {shown.map((m) => {
+            const how = entering.get(m.id);
+            return (
+              <li key={m.id} className={how ? 'feed-' + how : undefined}>
+                <div className="tile-pair">
+                  <AgentTile name={agentOf(m.from)} size={34} ring />
+                  <AgentTile name={agentOf(m.to)} size={34} ring />
                 </div>
-                <span className="feed-text">{m.content}</span>
-                <StatusChip chip={messageChip(m, messages ?? [])} />
-              </div>
-            </li>
-          ))}
+                <div className="feed-body">
+                  <div className="feed-meta">
+                    <a className="feed-route" href={href.thread(m.thread_id || m.id)}>
+                      {who(m.from_label)} → {who(m.to_label)}
+                    </a>
+                    <span className="feed-when">{ago(m.created_at, now)}</span>
+                  </div>
+                  <span className="feed-text">{m.content}</span>
+                  <StatusChip chip={messageChip(m, messages ?? [])} />
+                </div>
+              </li>
+            );
+          })}
         </ol>
       )}
+      {runs.map((r) => (
+        <CourierFlight
+          key={r.id}
+          run={r}
+          onLand={() => release(r.id, 'pop')}
+          onDone={() => {
+            mark(r.id, null);
+            setRuns((all) => all.filter((x) => x !== r));
+          }}
+        />
+      ))}
     </section>
   );
+}
+
+/** Where the newest card's first icon goes: the top of the list, under the heading when it's empty. */
+function landing(feed: HTMLElement | null): { x: number; y: number } {
+  if (!feed) return { x: window.innerWidth - 80, y: 80 };
+  const list = feed.querySelector('ol');
+  const head = feed.querySelector('.panel-head');
+  const top = list ? list.getBoundingClientRect().top : (head?.getBoundingClientRect().bottom ?? feed.getBoundingClientRect().top);
+  const left = (list ?? head ?? feed).getBoundingClientRect().left;
+  return { x: left, y: top + 14 };
 }
 
 function Pairs({ overview }: { overview: Overview }) {
