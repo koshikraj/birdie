@@ -54,6 +54,7 @@ To build from source instead, you need [Go](https://go.dev/dl/) 1.27 or newer:
 
 ```sh
 git clone https://github.com/koshikraj/birdie && cd birdie
+make web                # builds the web app into the binary; needs Node.js 22 (skip it to go without)
 make install            # puts birdie in ~/.local/bin (make sure that's on your PATH)
 birdie onboard
 ```
@@ -215,6 +216,27 @@ birdie status                        # what's running, how delivery is going, an
 birdie thread MSG_ID                 # each message in its thread, and how far it got
 ```
 
+## 6. Open the web app
+
+```sh
+birdie ui
+```
+
+This opens birdie in your browser, signed in with a link that works once:
+
+- **Dashboard:** messages flying between your agents as they happen, what
+  needs your attention, and who talks to whom.
+- **Agents:** each agent and its sessions, how delivery to it is going, how to
+  add more agents, and a form to send a message.
+- **Messages:** every conversation, and how far each message got.
+
+`birdie serve` serves the app at `http://127.0.0.1:7777/ui/`. It only answers
+on this machine, and only after you sign in with `birdie ui`. The first time,
+`birdie ui` adds an agent called `me`, which the app sends messages as.
+
+Over SSH, run `birdie ui --no-open` and open the link it prints in a browser
+that can reach the machine, for example through `ssh -L 7777:127.0.0.1:7777`.
+
 ## Other agents
 
 **Grok CLI, answering headlessly (ACP).** No window needs to be open: for each
@@ -306,6 +328,7 @@ This project used to be called agent-bus. To upgrade:
 birdie serve [--addr 127.0.0.1:7777] [--loop-limit 12]
 birdie onboard
 birdie status
+birdie ui [--no-open]
 birdie doctor
 birdie setup claude|codex|grok|hermes|--all [--as NAME] [--remove] [--dry-run] [--wake]
 birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]
@@ -341,6 +364,8 @@ that way come back unless confirmed with `ack`.
 | A message went to the wrong session | `birdie session list` shows the default; choose one with `session default`, or address it as `agent/session` |
 | Claude never wakes up | `session list` shows it as `push`. If it shows `pull` or isn't listed, restart it. `claude -p` runs can't be woken |
 | Codex shows `pull` | It hasn't used a birdie tool yet; ask it to run `list_agents` |
+| `birdie ui` says the web app is missing | The service is running an older birdie. Restart it with this one: `birdie service install` |
+| The web app asks you to sign in | Run `birdie ui` again. Each link works once, within 10 minutes |
 | A message never arrived | `birdie thread MSG_ID` shows how far it got and which session took it. `birdie status` lists everything still waiting |
 | Grok Bot gets nothing | `birdie agent list` shows `grok-bot` as `webhook`, and why its last delivery failed. After 8 failed tries the sender gets a notice from `birdie` saying why |
 | Headless Grok doesn't answer | The service log shows `acp: turn failed`; the sender also gets a reply explaining why |
@@ -351,6 +376,8 @@ that way come back unless confirmed with `ack`.
 - Listens on 127.0.0.1 only. Each agent has its own token; only a hash is stored.
 - The sender of every message is set by the bus from the token, so it can't be faked.
 - Only the agents in a thread can read it or post to it.
+- The web app answers only on 127.0.0.1 or localhost, after you sign in with a
+  one-time link from `birdie ui`, and refuses changes asked for by other websites.
 - Agents are capped at 12 messages to the same agent in 10 minutes, so they
   can't loop unnoticed.
 - Messages from other agents are treated as requests, not as your
@@ -364,6 +391,8 @@ cmd/birdie       CLI
 internal/bus        messages, threads, inboxes, delivery loop (no transport code)
 internal/store      SQLite storage
 internal/httpapi    HTTP API
+internal/webui      the web app's API and sign-in, serving the built app at /ui
+web/                the web app: React, TypeScript and Vite
 internal/mcpserver  MCP server, and how each agent program is reached (Claude, Codex, Grok)
 internal/adapter    outbound delivery: webhook, ACP (A2A next)
 skills/             talk-to-agents skill for Claude, Grok and Codex
