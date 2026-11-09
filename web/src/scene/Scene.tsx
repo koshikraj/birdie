@@ -155,6 +155,7 @@ export function Scene({ overview, recent }: Props) {
   const [, setFrame] = useState(0);
   const repaint = () => setFrame((n) => (n + 1) % 1e9);
   const [paused, setPaused] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
   const [eventTick, setEventTick] = useState(0);
   const activity = useRef(new Map<string, number>());
   const sawMessage = useRef(false);
@@ -214,7 +215,7 @@ export function Scene({ overview, recent }: Props) {
   }, [layout, lastActive, now, noMessages]);
 
   const ctxRef = useRef<SceneContext>({ placed: new Set(), sleeping: new Set() });
-  ctxRef.current = { placed: new Set(layout.placed.map((p) => p.name)), sleeping };
+  ctxRef.current = { placed: new Set(layout.placed.map((p) => p.name)), sleeping, hovered };
   player.paused = paused;
 
   const sleepKey = [...sleeping].sort().join('|');
@@ -226,7 +227,7 @@ export function Scene({ overview, recent }: Props) {
   useEffect(() => {
     player.step(0, ctxRef.current);
     repaint();
-  }, [sleepKey, slotKey, player]);
+  }, [sleepKey, slotKey, hovered, player]);
 
   // A flight wakes its two agents when it starts playing, so a sleeping
   // recipient dozes until its letter heads its way.
@@ -516,6 +517,9 @@ export function Scene({ overview, recent }: Props) {
             <clipPath id={clipId}>
               <rect x={-34} y={-68} width={68} height={68} rx={17} />
             </clipPath>
+            <clipPath id={clipId + '-mini'}>
+              <rect x={0} y={0} width={MINI} height={MINI} rx={6} />
+            </clipPath>
           </defs>
 
           {placed.map((p) => (
@@ -574,8 +578,11 @@ export function Scene({ overview, recent }: Props) {
               <g
                 key={'bird-' + pl.name}
                 transform={'translate(' + pl.x + ' ' + f2(b.y) + ') rotate(' + f2(b.lean) + ') scale(' + (1.1 * b.pop).toFixed(3) + ')'}
-                className={b.grey ? 'scene-grey' : undefined}
+                className={'scene-bird' + (b.grey ? ' scene-grey' : '')}
+                onPointerEnter={() => setHovered(pl.name)}
+                onPointerLeave={() => setHovered((h) => (h === pl.name ? null : h))}
               >
+                <rect x={-58} y={-100} width={116} height={104} className="scene-hit" />
                 <g transform={'scale(' + pl.face + ' 1)'}>
                   <polygon points={sp.tailPts} transform={part(sp.tail[0], sp.tail[1], b.parts)} style={{ fill: 'var(--agent-' + id.color + ')' }} />
                   <rect x={f2(-b.w / 2)} y={f2(-b.h)} width={f2(b.w)} height={f2(b.h)} rx={f2(b.rx)} style={{ fill: b.fill }} />
@@ -607,7 +614,7 @@ export function Scene({ overview, recent }: Props) {
 
           {birds.map((b) => (
             <g key={'label-' + b.pl.name}>
-              <text x={b.pl.x} y={b.pl.y + 32} textAnchor="middle" className="scene-name">{short(b.pl.name)}</text>
+              <NameLabel x={b.pl.x} y={b.pl.y + 32} name={short(b.pl.name)} id={b.pl.id} clipId={clipId + '-mini'} />
               <text x={b.pl.x} y={b.pl.y + 52} textAnchor="middle" className={b.problem ? 'scene-detail scene-detail-problem' : 'scene-detail'}>{b.detail}</text>
               <text x={b.pl.x} y={b.pl.y + 74} textAnchor="middle" className="scene-role">{b.role}</text>
             </g>
@@ -635,6 +642,46 @@ export function Scene({ overview, recent }: Props) {
         {more}
       </div>
     </section>
+  );
+}
+
+/** The small tile next to an agent's name, in the scene's 17px mono. */
+const MINI = 22;
+const NAME_CHAR = 17 * 0.6;
+
+/** An agent's name under its perch, with its icon in front, centered together. */
+function NameLabel({ x, y, name, id, clipId }: { x: number; y: number; name: string; id: Identity; clipId: string }) {
+  const gap = 7;
+  const width = MINI + gap + name.length * NAME_CHAR;
+  const left = x - width / 2;
+  const s = id.full ? MINI : Math.round(MINI * 0.62);
+  return (
+    <g>
+      <g transform={'translate(' + f1(left) + ' ' + (y - MINI + 5) + ')'}>
+        <rect width={MINI} height={MINI} rx={6} style={{ fill: id.tile }} />
+        <rect x={0.5} y={0.5} width={MINI - 1} height={MINI - 1} rx={5.5} className="scene-mini-edge" />
+        {id.glyph === 'icon' && id.icon ? (
+          <image
+            href={id.icon}
+            x={(MINI - s) / 2}
+            y={(MINI - s) / 2}
+            width={s}
+            height={s}
+            clipPath={id.full ? 'url(#' + clipId + ')' : undefined}
+            preserveAspectRatio={id.full ? 'xMidYMid slice' : undefined}
+          />
+        ) : id.glyph === 'terminal' ? (
+          <g transform="translate(3 3) scale(0.6667)">
+            <path d="M5 7l5 5-5 5M12 17h7" className="scene-terminal" />
+          </g>
+        ) : (
+          <text x={MINI / 2} y={MINI / 2 + 4.5} textAnchor="middle" className="scene-mini-letter" style={{ fill: 'var(--agent-' + id.color + '-on)' }}>
+            {id.letter}
+          </text>
+        )}
+      </g>
+      <text x={f1(left + MINI + gap)} y={y} className="scene-name">{name}</text>
+    </g>
   );
 }
 

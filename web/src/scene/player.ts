@@ -44,6 +44,8 @@ export interface SceneContext {
   placed: Set<string>;
   /** Asleep by the data: quiet for 5 minutes, nothing busy, no delivery error. */
   sleeping: Set<string>;
+  /** The agent under the pointer, shown as its icon whatever it's doing. */
+  hovered?: string | null;
 }
 
 /** Pending flights beyond this are dropped, oldest first, so a burst doesn't back up. */
@@ -149,7 +151,8 @@ export class Player {
       }
       const asleep = ctx.sleeping.has(name) && !involved;
       if (asleep) target = 1;
-      this.morphTo(name, target, !asleep, asleep);
+      if (name === ctx.hovered) target = 0;
+      this.morphTo(name, target, !asleep && name !== ctx.hovered, asleep);
     }
     for (const name of [...this.anims.keys()]) if (!ctx.placed.has(name)) this.anims.delete(name);
   }
@@ -164,7 +167,7 @@ export class Player {
     }
     if (a.morph.to !== target) {
       const from = this.morphValue(a.morph).color;
-      a.morph = { from, to: target, start: this.clock, dur: this.reduce ? 0 : target ? T.MI : T.MO, burst: burst && !this.reduce };
+      a.morph = { from, to: target, start: this.clock, dur: this.reduce || this.paused ? 0 : target ? T.MI : T.MO, burst: burst && !this.reduce && !this.paused };
     }
     if (a.shut && !shut && !this.reduce) a.wakeAt = this.clock;
     a.shut = shut;

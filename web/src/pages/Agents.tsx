@@ -23,8 +23,8 @@ import {
 import { href } from '../lib/router';
 import { errorText } from '../lib/status';
 import { ago, ms, span, until, useNow } from '../lib/time';
-
 import { Signal } from '../components/Signal';
+
 export function AgentsPage({ section }: { section?: 'send' | 'add' }) {
   const overview = useOverview();
   const o = overview.data;
@@ -145,6 +145,7 @@ function AgentCard({
       <div className="agent-card-top">
         <div className="agent-stage">
           <BirdShape spec={id.spec} color={id.color} className="agent-stage-bird" />
+          <AgentTile name={a.name} size={60} className="agent-stage-icon" />
           <AgentTile name={a.name} size={44} className="agent-badge" />
         </div>
         <div className="agent-card-name">
