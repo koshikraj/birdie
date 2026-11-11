@@ -3,13 +3,22 @@ context. `go test ./cmd/birdie` runs this; no Hermes or model is needed."""
 import importlib.util
 import json
 import os
+import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 import urllib.request
 from pathlib import Path
 from unittest import mock
+
+# Hermes hands the plugin its token through agent.secret_scope; this stand-in reads the
+# environment, as Hermes does for the default profile.
+secret_scope = types.ModuleType("agent.secret_scope")
+secret_scope.get_secret = lambda name, default=None: os.environ.get(name, default)
+sys.modules.setdefault("agent", types.ModuleType("agent")).secret_scope = secret_scope
+sys.modules["agent.secret_scope"] = secret_scope
 
 spec = importlib.util.spec_from_file_location("birdie_hermes", Path(__file__).with_name("__init__.py"))
 plugin = importlib.util.module_from_spec(spec)
@@ -372,6 +381,13 @@ class PluginTest(unittest.TestCase):
             del os.environ[plugin.TOKEN_ENV]
             self.assertIsNone(self.turn(ctx))
             self.assertIn("birdie setup hermes", json.loads(self.call(ctx, "birdie_list_agents"))["error"])
+
+    def test_the_token_comes_only_from_hermes(self):
+        # Under a multi-profile gateway the environment may hold another profile's token.
+        with mock.patch.object(secret_scope, "get_secret", return_value=None):
+            self.assertEqual(plugin.read_token(), "")
+        with mock.patch.dict(sys.modules, {"agent.secret_scope": None}):
+            self.assertEqual(plugin.read_token(), "")
 
     def test_background_work_uses_the_token_from_the_last_turn(self):
         ctx, network = self.load()

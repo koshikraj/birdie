@@ -56,8 +56,8 @@ def read_token():
     """Asks Hermes, so a gateway serving several profiles gives this profile's secret."""
     try:
         from agent.secret_scope import get_secret
-    except ImportError:
-        return os.environ.get(TOKEN_ENV, "")
+    except ImportError:  # not running inside Hermes
+        return ""
     return get_secret(TOKEN_ENV, "") or ""
 
 
