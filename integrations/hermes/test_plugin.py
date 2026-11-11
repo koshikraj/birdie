@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 import urllib.request
@@ -155,6 +156,26 @@ class PluginTest(unittest.TestCase):
         self.assertIn('agent "hermes"', result["context"])
         self.assertIn("tool_search", result["context"])
 
+    def test_the_intro_goes_in_the_system_prompt_where_hermes_has_sections(self):
+        sections = {}
+        ctx = Context()
+        ctx.register_system_prompt_section = lambda id, content, **_: sections.update({id: content})
+        plugin.register(ctx)
+        self.networks.append(ctx.unload.__self__)
+        self.assertIn('agent "hermes"', sections["birdie"])
+        self.assertIsNone(ctx.hooks["pre_llm_call"](session_id="s1", platform="cli", is_first_turn=True),
+                          "the first turn must not repeat it")
+
+    def test_a_refused_section_falls_back_to_the_first_turn(self):
+        ctx = Context()
+        def refuse(id, content, **_):
+            raise ValueError("system prompt section 'birdie' is already registered")
+        ctx.register_system_prompt_section = refuse
+        plugin.register(ctx)
+        self.networks.append(ctx.unload.__self__)
+        result = ctx.hooks["pre_llm_call"](session_id="s1", platform="cli", is_first_turn=True)
+        self.assertIn('agent "hermes"', result["context"])
+
     def test_wake_starts_a_turn_and_confirms_only_after_hermes_accepts(self):
         self.write_config(True)
         ctx, _ = self.load()
@@ -282,14 +303,18 @@ class PluginTest(unittest.TestCase):
         time.sleep(1.2)
         self.assertEqual(ctx.injected, [], "a reply the tool returned must not also start a turn")
 
-    def test_stopping_hermes_stops_a_wait(self):
-        ctx, network = self.load()
+    def test_stopping_a_turn_stops_its_wait(self):
+        ctx, _ = self.load()
+        ctx.session_key = lambda: "route-1"
         self.turn(ctx)
-        network.interrupted = lambda: True
+        threading.Timer(0.5, lambda: ctx.hooks["agent_loop_stopped"](session_key="other")).start()
+        threading.Timer(1, lambda: ctx.hooks["agent_loop_stopped"](session_key="route-1", platform="tui")).start()
         started = time.monotonic()
         result = json.loads(self.call(ctx, "birdie_wait_for_reply", {"thread_id": "thr_x", "timeout_seconds": 60}))
         self.assertLess(time.monotonic() - started, 5)
         self.assertIn("Stopped waiting", result["error"])
+        # The next turn's wait runs again.
+        self.assertIn("No reply yet", self.call(ctx, "birdie_wait_for_reply", {"thread_id": "thr_x", "timeout_seconds": 0.3}))
 
     def test_finishing_a_conversation_ends_its_session_and_wake(self):
         self.write_config(True)
@@ -297,6 +322,20 @@ class PluginTest(unittest.TestCase):
         self.turn(ctx)
         self.assertEqual(len(self.sessions()), 1)
         ctx.hooks["on_session_finalize"](session_id="s1")
+        self.assertEqual(self.sessions(), [])
+        peer("POST", "/v1/messages", {"to": "hermes", "content": "too late"})
+        time.sleep(1.5)
+        self.assertEqual(ctx.injected, [])
+
+    def test_deleting_a_conversation_ends_its_session_and_wake(self):
+        self.write_config(True)
+        ctx, _ = self.load()
+        self.turn(ctx, session="a")
+        self.turn(ctx, session="b")
+        ctx.hooks["post_compaction"](session_id="a2", old_session_id="a")
+        ctx.hooks["on_session_delete"](session_id="a2", reason="delete", deleted_ids=["a", "a2"])
+        self.assertEqual(len(self.sessions()), 1, "only the deleted conversation's session ends")
+        ctx.hooks["on_session_delete"](session_id="b", reason="archive")
         self.assertEqual(self.sessions(), [])
         peer("POST", "/v1/messages", {"to": "hermes", "content": "too late"})
         time.sleep(1.5)
@@ -320,7 +359,8 @@ class PluginTest(unittest.TestCase):
         ctx = Context()
         plugin.register(ctx)
         self.assertEqual({tool[0] for tool in plugin.TOOLS}, set(ctx.tools))
-        self.assertEqual({"pre_llm_call", "on_session_finalize", "on_session_reset", "post_compaction"}, set(ctx.hooks))
+        self.assertEqual({"pre_llm_call", "on_session_finalize", "on_session_reset", "on_session_delete", "post_compaction",
+                          "agent_loop_stopped"}, set(ctx.hooks))
         self.assertIsNone(self.turn(ctx))
         self.assertIsNone(ctx.hooks["on_session_finalize"](session_id="s1"))
         self.assertIn("birdie setup hermes", json.loads(self.call(ctx, "birdie_list_agents"))["error"])

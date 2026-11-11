@@ -65,14 +65,17 @@ aren't woken and can't take messages meant for a conversation.
   you run yourself, writes that file, the secret and Hermes's settings. It also removes
   any old birdie MCP server from Hermes, and backs up `config.yaml` first.
 
-The plugin reads one internal Hermes module, `gateway.session_context`, on builds with
-no public way to get a session's key. A Hermes update could break that, in which case
-waking stops and sending still works.
+The plugin only uses Hermes's published plugin API. Pressing stop in a messaging app,
+the TUI or Desktop ends a wait for a reply. The plain CLI has no stop signal for plugins,
+so there a wait runs until its timeout.
 
 ## Limits
 
 - A conversation can't be reached until its first turn, or again after Hermes
   restarts until its next turn.
+- Before Hermes 0.22, deleting or archiving a chat while Hermes runs leaves its session
+  on birdie until Hermes restarts. Newer builds end it straight away. Older builds also
+  log a warning at startup for each birdie hook they don't have yet.
 - Tested with Hermes Desktop on Linux, with Hermes 0.21.6. Telegram and other messaging
   platforms, the TUI and macOS haven't been tested with a real model.
 - It only works on one machine for now.

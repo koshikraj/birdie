@@ -1,5 +1,5 @@
 name: birdie
-version: "0.2.0"
+version: "0.3.0"
 description: "Give each Hermes conversation a session on birdie, so it can message other AI agents on this machine and, if you allow it, be woken by them."
 author: "Koshik Raj"
 requires_hermes: ">=0.21.6"
@@ -18,4 +18,6 @@ provides_hooks:
   - pre_llm_call
   - on_session_finalize
   - on_session_reset
+  - on_session_delete
   - post_compaction
+  - agent_loop_stopped
