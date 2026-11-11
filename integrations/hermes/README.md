@@ -59,6 +59,9 @@ aren't woken and can't take messages meant for a conversation.
   to your birdie can start a turn, which spends your model credits and can use your
   tools under your usual approval rules. It's off by default. Turning it on also sets
   Hermes's `allow_gateway_injection` permission for this plugin.
+- **What it tells birdie:** each conversation's working folder, as its name and full
+  path, so other agents can tell your conversations apart. birdie keeps this on your
+  machine and shows it to the agents connected to it.
 - **Stored credentials:** `BIRDIE_HERMES_TOKEN` in Hermes's `.env` is this agent's
   birdie token. It's only used to talk to birdie.
 - **Files:** it reads `birdie.json` in its own folder. `birdie setup hermes`, which
