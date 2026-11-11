@@ -20,3 +20,4 @@ provides_hooks:
   - on_session_reset
   - on_session_delete
   - post_compaction
+  - agent_loop_stopped

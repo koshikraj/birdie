@@ -178,6 +178,7 @@ class Network:
         self.closed = threading.Event()
         self.beat = None
         self.intro_in_prompt = False
+        self.stopped = set()  # routes whose turn the user stopped
 
     # What Hermes offers varies by version. These use its public API where it has
     # one, and otherwise read the turn's session variables.
@@ -209,15 +210,15 @@ class Network:
     def cwd(self):
         return self.optional("session_cwd") or os.environ.get("TERMINAL_CWD") or os.getcwd()
 
-    def interrupted(self):
-        method = getattr(self.ctx, "is_interrupted", None)
-        try:
-            if callable(method):
-                return bool(method())
-            from tools.interrupt import is_interrupted
-            return bool(is_interrupted())
-        except Exception:
-            return False
+    def stop(self, session_key="", **_):
+        """Hermes says when the user stops a gateway, TUI or Desktop turn. The plain CLI has no such signal."""
+        if session_key:
+            with self.lock:
+                self.stopped.add(session_key)
+
+    def interrupted(self, conversation):
+        with self.lock:
+            return bool(conversation.route) and conversation.route in self.stopped
 
     def wake_allowed(self):
         """Read each time, so turning wake off applies at once, even to an idle conversation."""
@@ -423,7 +424,7 @@ class Network:
                 return messages
             if time.monotonic() >= deadline:
                 return []
-            if self.interrupted():
+            if self.interrupted(conversation):
                 raise InterruptedError
 
     def wait_pushed(self, conversation, thread, seconds):
@@ -439,7 +440,7 @@ class Network:
                 try:
                     return [waiter.get(timeout=min(WAIT_STEP_SECONDS, max(0.01, deadline - time.monotonic())))], False
                 except queue.Empty:
-                    if self.interrupted():
+                    if self.interrupted(conversation):
                         raise InterruptedError from None
             return [], False
         finally:
@@ -458,6 +459,8 @@ class Network:
     def tool(self, operation, args, session_id):
         try:
             conversation = self.conversation(session_id)
+            with self.lock:
+                self.stopped.discard(conversation.route)  # a stop is for the turn it came in
             return operation(conversation, args)
         except InterruptedError:
             return json.dumps({"error": "Stopped waiting. Any message that hasn't been shown is still waiting."})
@@ -555,15 +558,6 @@ TOOLS = (
 )
 
 
-def hook_exists(name):
-    """Hermes logs a warning for a hook it doesn't have, and older builds lack some."""
-    try:
-        from hermes_cli.plugins import VALID_HOOKS
-    except Exception:
-        return True
-    return name in VALID_HOOKS
-
-
 def register(ctx):
     # A catalog install runs before `birdie setup hermes`. It still registers everything,
     # and its tools say what to do, so the model can tell the user.
@@ -586,9 +580,9 @@ def register(ctx):
         ("on_session_reset", network.finalize if network else idle),
         ("on_session_delete", network.deleted if network else idle),
         ("post_compaction", network.compacted if network else idle),
+        ("agent_loop_stopped", network.stop if network else idle),
     ):
-        if hook_exists(name):
-            ctx.register_hook(name, callback)
+        ctx.register_hook(name, callback)
 
     def handler(operation):
         def call(args, session_id=None, **_):
