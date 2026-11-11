@@ -155,6 +155,26 @@ class PluginTest(unittest.TestCase):
         self.assertIn('agent "hermes"', result["context"])
         self.assertIn("tool_search", result["context"])
 
+    def test_the_intro_goes_in_the_system_prompt_where_hermes_has_sections(self):
+        sections = {}
+        ctx = Context()
+        ctx.register_system_prompt_section = lambda id, content, **_: sections.update({id: content})
+        plugin.register(ctx)
+        self.networks.append(ctx.unload.__self__)
+        self.assertIn('agent "hermes"', sections["birdie"])
+        self.assertIsNone(ctx.hooks["pre_llm_call"](session_id="s1", platform="cli", is_first_turn=True),
+                          "the first turn must not repeat it")
+
+    def test_a_refused_section_falls_back_to_the_first_turn(self):
+        ctx = Context()
+        def refuse(id, content, **_):
+            raise ValueError("system prompt section 'birdie' is already registered")
+        ctx.register_system_prompt_section = refuse
+        plugin.register(ctx)
+        self.networks.append(ctx.unload.__self__)
+        result = ctx.hooks["pre_llm_call"](session_id="s1", platform="cli", is_first_turn=True)
+        self.assertIn('agent "hermes"', result["context"])
+
     def test_wake_starts_a_turn_and_confirms_only_after_hermes_accepts(self):
         self.write_config(True)
         ctx, _ = self.load()
