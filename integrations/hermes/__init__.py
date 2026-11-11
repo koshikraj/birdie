@@ -296,12 +296,23 @@ class Network:
                 self.sessions[session_id] = ident
 
     def finalize(self, session_id="", old_session_id="", **_):
+        self.forget([old_session_id or session_id])
+
+    def deleted(self, session_id="", deleted_ids=None, **_):
+        """A deleted or archived chat may never be finalized while Hermes keeps running."""
+        self.forget([session_id, *(deleted_ids or [])])
+
+    def forget(self, session_ids):
+        """Ends the conversations these Hermes sessions belonged to, once none is left."""
+        ended = []
         with self.lock:
-            ident = self.sessions.pop(old_session_id or session_id, None)
-            if ident and ident in self.sessions.values():
-                return
-            conversation = self.conversations.pop(ident, None) if ident else None
-        if conversation:
+            idents = {self.sessions.pop(sid, None) for sid in session_ids if sid}
+            for ident in idents - {None}:
+                if ident not in self.sessions.values():
+                    conversation = self.conversations.pop(ident, None)
+                    if conversation:
+                        ended.append(conversation)
+        for conversation in ended:
             self.end(conversation)
 
     def end(self, conversation):
@@ -556,6 +567,7 @@ def register(ctx):
         ("pre_llm_call", network.before_turn if network else idle),
         ("on_session_finalize", network.finalize if network else idle),
         ("on_session_reset", network.finalize if network else idle),
+        ("on_session_delete", network.deleted if network else idle),
         ("post_compaction", network.compacted if network else idle),
     ):
         if hook_exists(name):

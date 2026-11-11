@@ -18,4 +18,5 @@ provides_hooks:
   - pre_llm_call
   - on_session_finalize
   - on_session_reset
+  - on_session_delete
   - post_compaction

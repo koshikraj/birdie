@@ -302,6 +302,20 @@ class PluginTest(unittest.TestCase):
         time.sleep(1.5)
         self.assertEqual(ctx.injected, [])
 
+    def test_deleting_a_conversation_ends_its_session_and_wake(self):
+        self.write_config(True)
+        ctx, _ = self.load()
+        self.turn(ctx, session="a")
+        self.turn(ctx, session="b")
+        ctx.hooks["post_compaction"](session_id="a2", old_session_id="a")
+        ctx.hooks["on_session_delete"](session_id="a2", reason="delete", deleted_ids=["a", "a2"])
+        self.assertEqual(len(self.sessions()), 1, "only the deleted conversation's session ends")
+        ctx.hooks["on_session_delete"](session_id="b", reason="archive")
+        self.assertEqual(self.sessions(), [])
+        peer("POST", "/v1/messages", {"to": "hermes", "content": "too late"})
+        time.sleep(1.5)
+        self.assertEqual(ctx.injected, [])
+
     def test_unloading_ends_every_session(self):
         ctx, _ = self.load()
         self.turn(ctx, session="a")
@@ -320,7 +334,7 @@ class PluginTest(unittest.TestCase):
         ctx = Context()
         plugin.register(ctx)
         self.assertEqual({tool[0] for tool in plugin.TOOLS}, set(ctx.tools))
-        self.assertEqual({"pre_llm_call", "on_session_finalize", "on_session_reset", "post_compaction"}, set(ctx.hooks))
+        self.assertEqual({"pre_llm_call", "on_session_finalize", "on_session_reset", "on_session_delete", "post_compaction"}, set(ctx.hooks))
         self.assertIsNone(self.turn(ctx))
         self.assertIsNone(ctx.hooks["on_session_finalize"](session_id="s1"))
         self.assertIn("birdie setup hermes", json.loads(self.call(ctx, "birdie_list_agents"))["error"])

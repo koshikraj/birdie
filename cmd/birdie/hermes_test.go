@@ -357,7 +357,9 @@ func TestHermesPlugin(t *testing.T) {
 		}
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := httptest.NewServer(httpapi.New(bus.New(st, log), log))
+	b := bus.New(st, log)
+	b.LoopLimit = -1 // the tests send more than a loop allows
+	srv := httptest.NewServer(httpapi.New(b, log))
 	defer srv.Close()
 
 	cmd := exec.CommandContext(ctx, python, "-I", filepath.Join("..", "..", "integrations", "hermes", "test_plugin.py"))
