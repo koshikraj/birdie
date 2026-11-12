@@ -26,6 +26,8 @@ CONFIG = Path(__file__).with_name("birdie.json")
 TOKEN_ENV = "BIRDIE_HERMES_TOKEN"
 NOT_SET_UP = ("birdie isn't set up yet. Run `birdie setup hermes`, then restart Hermes. "
               "Get birdie from https://github.com/koshikraj/birdie")
+NO_TOKEN = ("Hermes doesn't have the BIRDIE_HERMES_TOKEN secret yet. Run `birdie setup hermes`: "
+            "it shows the token and how to give it to Hermes. Then restart Hermes.")
 BEAT_SECONDS = 30  # the bus drops a session it hasn't heard from in 90
 POLL_SECONDS = 25
 LEASE_SECONDS = 120
@@ -76,7 +78,7 @@ class Bus:
         except Exception:
             log.debug("birdie: no secret scope on this thread", exc_info=True)
         if not self.token:
-            raise BusError(NOT_SET_UP)
+            raise BusError(NO_TOKEN)
         return self.token
 
     def call(self, method, path, body=None, timeout=10):

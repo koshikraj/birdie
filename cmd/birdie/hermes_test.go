@@ -50,7 +50,8 @@ func TestSetupHermes(t *testing.T) {
 	config := "# keep this\nmcp_servers:\n  other:\n    command: x\n  birdie:\n    command: y\n  agent-bus:\n    command: z\nmodel:\n  birdie:\n    no: match\n"
 	os.WriteFile(filepath.Join(root, "config.yaml"), []byte(config), 0o600)
 	envPath := filepath.Join(root, ".env")
-	os.WriteFile(envPath, []byte("# mine\nOTHER=1\n"+hermesTokenEnv+"=old\nLAST=2"), 0o644)
+	envBefore := "# mine\nOTHER=1\n" + hermesTokenEnv + "=old\nLAST=2"
+	os.WriteFile(envPath, []byte(envBefore), 0o644)
 
 	if err := setupOne(context.Background(), "hermes", o, false); err != nil {
 		t.Fatal(err)
@@ -67,11 +68,9 @@ func TestSetupHermes(t *testing.T) {
 	if !strings.Contains(settings, defaultURL) {
 		t.Fatalf("settings:\n%s", settings)
 	}
-	if got, want := read(t, envPath), "# mine\nOTHER=1\n"+hermesTokenEnv+"="+token+"\nLAST=2\n"; got != want {
-		t.Errorf(".env keeps the rest and replaces the token:\n%s", got)
-	}
-	if fi, err := os.Stat(envPath); err != nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf(".env mode: %v, %v", fi.Mode(), err)
+	// Hermes stores its own secrets: setup only asks Hermes whether it has the token.
+	if got := read(t, envPath); got != envBefore {
+		t.Errorf("setup changed Hermes's .env:\n%s", got)
 	}
 	got := read(t, calls)
 	if strings.Contains(got, token) {
@@ -80,7 +79,7 @@ func TestSetupHermes(t *testing.T) {
 	if backups, _ := filepath.Glob(filepath.Join(configDir(), "backups", "*", "*env*")); len(backups) != 0 {
 		t.Errorf("a file of secrets was backed up: %v", backups)
 	}
-	for _, want := range []string{"mcp remove birdie", "mcp remove agent-bus", "plugins enable birdie", "tools list"} {
+	for _, want := range []string{"mcp remove birdie", "mcp remove agent-bus", "plugins enable birdie", "tools list", "config get --raw " + hermesTokenEnv} {
 		if !strings.Contains(got, want) {
 			t.Errorf("calls lack %q:\n%s", want, got)
 		}
@@ -158,8 +157,8 @@ func TestSetupHermes(t *testing.T) {
 	if !exists(filepath.Join(tokenDir(), "hermes")) {
 		t.Error("the token should stay")
 	}
-	if got := read(t, envPath); got != "# mine\nOTHER=1\nLAST=2\n" {
-		t.Errorf("Hermes should lose its copy of the token and nothing else:\n%s", got)
+	if got := read(t, envPath); got != envBefore {
+		t.Errorf("removing changed Hermes's .env; it should only say how to clear the token:\n%s", got)
 	}
 	os.Remove(calls)
 	if err := setupOne(context.Background(), "hermes", o, false); err != nil {
@@ -205,25 +204,24 @@ func TestSetupHermesLeavesCatalogCodeToHermes(t *testing.T) {
 	}
 }
 
-func TestSetEnvLine(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sub", ".env")
-	if err := setEnvLine(path, "K", ""); err != nil || exists(path) {
-		t.Fatalf("removing from no file: %v, exists %v", err, exists(path))
+func TestHermesTokenHelp(t *testing.T) {
+	help := hermesTokenHelp("hermes", "tok123")
+	for _, want := range []string{hermesTokenEnv + "=tok123", "hermes plugins install birdie", "hermes config env-path", "agent hermes"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help lacks %q:\n%s", want, help)
+		}
 	}
-	if err := setEnvLine(path, "K", "v"); err != nil || read(t, path) != "K=v\n" {
-		t.Fatalf("new file: %v, %q", err, read(t, path))
+}
+
+// Setup takes Hermes's word for the secret, ignoring the progress Hermes may print first.
+func TestHermesSecret(t *testing.T) {
+	fakeHermes(t)
+	os.WriteFile(filepath.Join(os.Getenv("PATH"), "hermes"), []byte("#!/bin/sh\n[ \"$*\" = \"config get --raw K\" ] || exit 1\necho preparing...\necho tok123\n"), 0o755)
+	if got := hermesSecret("K"); got != "tok123" {
+		t.Errorf("hermesSecret = %q", got)
 	}
-	os.WriteFile(path, []byte("KEEP=1\nK=a\nK=b\nK2=c\n"), 0o600)
-	if err := setEnvLine(path, "K", "v"); err != nil || read(t, path) != "KEEP=1\nK=v\nK2=c\n" {
-		t.Fatalf("replace: %v, %q", err, read(t, path))
-	}
-	link := filepath.Join(t.TempDir(), ".env")
-	os.Symlink(path, link)
-	if err := setEnvLine(link, "K", ""); err != nil || read(t, path) != "KEEP=1\nK2=c\n" {
-		t.Fatalf("through a link: %v, %q", err, read(t, path))
-	}
-	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
-		t.Error("the symlink was replaced")
+	if got := hermesSecret("OTHER"); got != "" {
+		t.Errorf("a missing secret = %q", got)
 	}
 }
 
