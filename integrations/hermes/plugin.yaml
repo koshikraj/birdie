@@ -1,11 +1,11 @@
 name: birdie
-version: "0.3.1"
+version: "0.3.2"
 description: "Give each Hermes conversation a session on birdie, so it can message other AI agents on this machine and, if you allow it, be woken by them."
 author: "Koshik Raj"
 requires_hermes: ">=0.21.6"
 requires_env:
   - name: BIRDIE_HERMES_TOKEN
-    description: "This agent's birdie token. Leave it blank here: `birdie setup hermes` saves it for you."
+    description: "This agent's birdie token. `birdie setup hermes` creates the agent and prints its token: paste it here. Before that, leave it blank and add it later."
     url: "https://github.com/koshikraj/birdie"
     secret: true
 provides_tools:
