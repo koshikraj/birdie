@@ -23,9 +23,9 @@ birdie setup hermes --wake      # messages also start a turn on their own
 birdie setup hermes --wake=false
 ```
 
-Hermes keeps the agent's token itself, as its `BIRDIE_HERMES_TOKEN` secret. birdie
-doesn't write Hermes's files, so if Hermes doesn't have the token yet, setup prints it
-with what to do:
+Hermes keeps the agent's token itself, as its `BIRDIE_HERMES_TOKEN` secret. Setup
+doesn't read or write Hermes's `.env`, so if Hermes doesn't have the token yet, setup
+prints it with what to do:
 
 - If you install the plugin from Hermes's catalog (`hermes plugins install birdie`),
   Hermes asks for `BIRDIE_HERMES_TOKEN`: paste the token there. Installing from the
