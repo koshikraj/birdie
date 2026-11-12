@@ -225,6 +225,22 @@ func TestHermesSecret(t *testing.T) {
 	}
 }
 
+// A Hermes that hangs, leaving a child that holds its output open, mustn't hang setup.
+func TestHermesSecretGivesUpOnAStuckHermes(t *testing.T) {
+	fakeHermes(t)
+	os.WriteFile(filepath.Join(os.Getenv("PATH"), "hermes"), []byte("#!/bin/sh\n/bin/sleep 5 &\n/bin/sleep 5\n"), 0o755)
+	timeout, delay := hermesSecretTimeout, hermesSecretDelay
+	hermesSecretTimeout, hermesSecretDelay = 200*time.Millisecond, 200*time.Millisecond
+	t.Cleanup(func() { hermesSecretTimeout, hermesSecretDelay = timeout, delay })
+	start := time.Now()
+	if got := hermesSecret("K"); got != "" {
+		t.Errorf("hermesSecret = %q", got)
+	}
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("waited %v for a stuck Hermes", took)
+	}
+}
+
 func TestSetupHermesDryRunChangesNothing(t *testing.T) {
 	o, calls := fakeHermes(t)
 	on := true

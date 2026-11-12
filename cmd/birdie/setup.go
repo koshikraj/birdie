@@ -582,12 +582,21 @@ func setupHermes(r *setupRun) error {
 	return nil
 }
 
+// How long hermesSecret waits for Hermes, and then for anything Hermes left running
+// that still holds its output open. Variables so a test can shorten them.
+var (
+	hermesSecretTimeout = hermesTimeout
+	hermesSecretDelay   = 5 * time.Second
+)
+
 // hermesSecret asks Hermes for one of its secrets, or "" when it hasn't one. Setup
 // only compares it, so it never reads or writes Hermes's .env itself.
 func hermesSecret(name string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), hermesTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), hermesSecretTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "hermes", "config", "get", "--raw", name).Output()
+	cmd := exec.CommandContext(ctx, "hermes", "config", "get", "--raw", name)
+	cmd.WaitDelay = hermesSecretDelay // without it, a child holding the output open would hang setup
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -599,8 +608,8 @@ func hermesSecret(name string) string {
 // secrets itself. The token is printed here rather than put on a command line.
 func hermesTokenHelp(agent, token string) string {
 	return fmt.Sprintf(`
-Hermes needs the token of agent %[1]s as its %[2]s secret. birdie doesn't write
-Hermes's files, so give it to Hermes yourself:
+Hermes needs the token of agent %[1]s as its %[2]s secret. Hermes stores its own
+secrets and birdie doesn't touch Hermes's .env, so give it to Hermes yourself:
   - When Hermes installs the plugin (hermes plugins install birdie), paste it at
     the %[2]s prompt.
   - Otherwise add this line to Hermes's .env (hermes config env-path shows where):
