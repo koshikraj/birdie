@@ -81,3 +81,45 @@ func TestOpenNamesOlderThreads(t *testing.T) {
 		t.Fatalf("titles = %v, err %v", titles, err)
 	}
 }
+
+// A send that fails leaves no thread record behind: the title and the first
+// message are stored together or not at all.
+func TestSendMessageKeepsBothOrNeither(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "bus.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	at := time.Now().UTC()
+	if err := st.InsertMessage(ctx, bus.Message{ID: "msg_taken", ThreadID: "thr_a", From: "alice", To: "bob", Content: "x", Status: bus.StatusQueued, CreatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	// The message id is taken, so the insert fails, and the thread must not be recorded.
+	err = st.SendMessage(ctx, bus.Message{ID: "msg_taken", ThreadID: "thr_new", From: "alice", To: "bob", Content: "x", Status: bus.StatusQueued, CreatedAt: at},
+		bus.Thread{ID: "thr_new", Title: "Alice private title", CreatedBy: "alice", CreatedAt: at})
+	if err == nil {
+		t.Fatal("a duplicate message id was accepted")
+	}
+	if _, err := st.GetThread(ctx, "thr_new"); !errors.Is(err, bus.ErrNotFound) {
+		t.Fatalf("failed send left a thread record: err = %v", err)
+	}
+	// A cancelled send keeps nothing either.
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := st.SendMessage(cancelled, bus.Message{ID: "msg_c", ThreadID: "thr_c", From: "alice", To: "bob", Content: "x", Status: bus.StatusQueued, CreatedAt: at},
+		bus.Thread{ID: "thr_c", Title: "never", CreatedBy: "alice", CreatedAt: at}); err == nil {
+		t.Fatal("a cancelled send succeeded")
+	}
+	if _, err := st.GetThread(ctx, "thr_c"); !errors.Is(err, bus.ErrNotFound) {
+		t.Fatalf("cancelled send left a thread record: err = %v", err)
+	}
+	// The next real first message names it.
+	if err := st.SendMessage(ctx, bus.Message{ID: "msg_carol", ThreadID: "thr_new", From: "carol", To: "bob", Content: "x", Status: bus.StatusQueued, CreatedAt: at},
+		bus.Thread{ID: "thr_new", Title: "Carol title", CreatedBy: "carol", CreatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	if th, err := st.GetThread(ctx, "thr_new"); err != nil || th.Title != "Carol title" || th.CreatedBy != "carol" {
+		t.Fatalf("thread = %+v, err %v", th, err)
+	}
+}

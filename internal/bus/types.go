@@ -250,8 +250,9 @@ type Store interface {
 	// Thread returns every message in the thread once agent is in it, and
 	// none before.
 	Thread(ctx context.Context, threadID, agent string) ([]Message, error)
-	// EnsureThread writes t if its thread has no record yet.
-	EnsureThread(ctx context.Context, t Thread) error
+	// SendMessage stores m, and t if m's thread has no record yet, together:
+	// both or neither.
+	SendMessage(ctx context.Context, m Message, t Thread) error
 	// GetThread returns a thread's record.
 	GetThread(ctx context.Context, id string) (Thread, error)
 	// RenameThread sets a thread's title, saying who did and when.

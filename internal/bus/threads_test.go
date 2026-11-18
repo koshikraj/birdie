@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"birdie/internal/bus"
@@ -77,5 +78,34 @@ func TestThreadTitles(t *testing.T) {
 	msgs, err := b.Thread(ctx, first.ThreadID, "alice")
 	if err != nil || msgs[0].ThreadTitle != "Review of PR #26" {
 		t.Fatalf("thread read: %v, err %v", msgs, err)
+	}
+}
+
+// Two first messages into the same new thread at once: one names it, and it's
+// the sender of the thread's first stored message.
+func TestConcurrentFirstSendsNameTheThreadOnce(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	for _, n := range []string{"alice", "carol", "bob"} {
+		addAgent(t, st, n, nil)
+	}
+	var wg sync.WaitGroup
+	for _, from := range []string{"alice", "carol"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := b.Send(ctx, from, bus.SendInput{To: "bob", ThreadID: "thr_race", Content: "hi", Title: from + " title"}); err != nil {
+				t.Error(from, err)
+			}
+		}()
+	}
+	wg.Wait()
+	msgs, err := b.Thread(ctx, "thr_race", "bob")
+	if err != nil || len(msgs) != 2 {
+		t.Fatalf("thread: %v, err %v", msgs, err)
+	}
+	th, err := st.GetThread(ctx, "thr_race")
+	if err != nil || th.CreatedBy != msgs[0].From || th.Title != msgs[0].From+" title" {
+		t.Fatalf("thread %+v, first message from %s, err %v", th, msgs[0].From, err)
 	}
 }

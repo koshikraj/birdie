@@ -331,13 +331,10 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 	if thread == "" {
 		thread = "thr_" + id
 	}
-	// A new thread is named now: as asked, or after this message.
+	// A new thread is named with its first message: as asked, or after it.
 	title := CleanTitle(in.Title, MaxTitleRunes)
 	if title == "" {
 		title = TitleFrom(in.Content)
-	}
-	if err := b.store.EnsureThread(ctx, Thread{ID: thread, Title: title, CreatedBy: from, CreatedAt: time.Now().UTC()}); err != nil {
-		return Message{}, err
 	}
 	m := Message{
 		ID:          "msg_" + id,
@@ -352,7 +349,7 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 		Status:      StatusQueued,
 		CreatedAt:   time.Now().UTC(),
 	}
-	if err := b.store.InsertMessage(ctx, m); err != nil {
+	if err := b.store.SendMessage(ctx, m, Thread{ID: thread, Title: title, CreatedBy: from, CreatedAt: m.CreatedAt}); err != nil {
 		return Message{}, err
 	}
 	b.emitMessage(StatusQueued, m, "", "")

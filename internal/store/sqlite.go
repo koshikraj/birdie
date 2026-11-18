@@ -169,12 +169,6 @@ func recordThreads(db *sql.DB) error {
 	return nil
 }
 
-func (s *SQLite) EnsureThread(ctx context.Context, t bus.Thread) error {
-	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO threads (id, title, created_by, created_at) VALUES (?, ?, ?, ?)`,
-		t.ID, t.Title, t.CreatedBy, t.CreatedAt.UnixMilli())
-	return err
-}
-
 func (s *SQLite) GetThread(ctx context.Context, id string) (bus.Thread, error) {
 	t := bus.Thread{ID: id}
 	var created, renamed int64
@@ -338,6 +332,33 @@ func (s *SQLite) ListAgents(ctx context.Context) ([]bus.Agent, error) {
 }
 
 func (s *SQLite) InsertMessage(ctx context.Context, m bus.Message) error {
+	return insertMessage(ctx, s.db, m)
+}
+
+// SendMessage stores m and, in the same transaction, t, unless its thread
+// has a record already. Nothing is kept if either fails, so a send that
+// fails doesn't leave a title behind.
+func (s *SQLite) SendMessage(ctx context.Context, m bus.Message, t bus.Thread) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO threads (id, title, created_by, created_at) VALUES (?, ?, ?, ?)`,
+		t.ID, t.Title, t.CreatedBy, t.CreatedAt.UnixMilli()); err != nil {
+		return err
+	}
+	if err := insertMessage(ctx, tx, m); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func insertMessage(ctx context.Context, db execer, m bus.Message) error {
 	meta := []byte("{}")
 	if len(m.Meta) > 0 {
 		var err error
@@ -345,7 +366,7 @@ func (s *SQLite) InsertMessage(ctx context.Context, m bus.Message) error {
 			return err
 		}
 	}
-	_, err := s.db.ExecContext(ctx,
+	_, err := db.ExecContext(ctx,
 		`INSERT INTO messages (id, thread_id, in_reply_to, sender, recipient, from_session, to_session, content, meta, status, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, m.ThreadID, m.InReplyTo, m.From, m.To, m.FromSession, m.ToSession, m.Content, string(meta), m.Status, m.CreatedAt.UnixMilli())
