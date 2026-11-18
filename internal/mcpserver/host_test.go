@@ -29,6 +29,10 @@ func TestMessageText(t *testing.T) {
 	if strings.Contains(MessageText(m), "earlier messages") {
 		t.Fatalf("a reply or a new thread shouldn't point at history: %s", MessageText(m))
 	}
+	titled := MessageText(bus.Message{ID: "msg_3", ThreadID: "thr_3", ThreadTitle: `Ship "it"> now`, From: "me", Content: "x"})
+	if !strings.HasPrefix(titled, `<birdie-message from="me" message_id="msg_3" thread_id="thr_3" thread_title="Ship \"it\"> now">`) {
+		t.Fatalf("titled text = %s", titled)
+	}
 	joined := bus.Message{ID: "msg_2", ThreadID: "thr_1", From: "me", Content: "join us"}
 	if !strings.Contains(MessageText(joined), `get_thread "thr_1"`) {
 		t.Fatalf("joining text = %s", MessageText(joined))

@@ -18,6 +18,9 @@ import (
 
 // threadCmd shows every message in a thread and how far each one got.
 func threadCmd(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "rename" {
+		return renameThreadCmd(ctx, args[1:])
+	}
 	fs := flag.NewFlagSet("thread", flag.ContinueOnError)
 	db := fs.String("db", defaultDB(), "SQLite database path")
 	full := fs.Bool("full", false, "show each message in full")
@@ -52,11 +55,47 @@ func threadCmd(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	printThread(os.Stdout, agents, msgs, *full, time.Now())
+	t, err := st.GetThread(ctx, msgs[0].ThreadID)
+	if err != nil && !errors.Is(err, bus.ErrNotFound) {
+		return err
+	}
+	printThread(os.Stdout, agents, t, msgs, *full, time.Now())
 	return nil
 }
 
-func printThread(w io.Writer, agents []bus.Agent, msgs []store.Tracked, full bool, now time.Time) {
+// renameThreadCmd gives a thread a new title, as the machine's owner, who
+// is "me" in the web app.
+func renameThreadCmd(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("thread rename", flag.ContinueOnError)
+	db := fs.String("db", defaultDB(), "SQLite database path")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) < 2 {
+		return errors.New(`usage: birdie thread rename THREAD_ID|MSG_ID "TITLE"`)
+	}
+	st, err := store.Open(*db)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	id := pos[0]
+	if m, err := st.GetMessage(ctx, id); err == nil {
+		id = m.ThreadID
+	}
+	title := bus.CleanTitle(strings.Join(pos[1:], " "), bus.MaxTitleRunes)
+	if title == "" {
+		return errors.New("a title needs some words")
+	}
+	if err := st.RenameThread(ctx, id, title, "me", time.Now().UTC()); err != nil {
+		return err
+	}
+	fmt.Printf("Thread %s is now %q.\n", id, title)
+	return nil
+}
+
+func printThread(w io.Writer, agents []bus.Agent, t bus.Thread, msgs []store.Tracked, full bool, now time.Time) {
 	labels, kinds := labelSessions(agents), deliveryKinds(agents)
 	var who []string
 	for _, m := range msgs {
@@ -69,6 +108,9 @@ func printThread(w io.Writer, agents []bus.Agent, msgs []store.Tracked, full boo
 	names := make([]string, len(who))
 	for i, name := range who {
 		names[i] = labels.agent(name)
+	}
+	if t.Title != "" {
+		fmt.Fprintf(w, "%s\n", printable(t.Title, false))
 	}
 	fmt.Fprintf(w, "Thread %s: %d %s between %s.\n", printable(msgs[0].ThreadID, false), len(msgs), plural(len(msgs), "message", "messages"), joinAnd(names))
 	cut := false

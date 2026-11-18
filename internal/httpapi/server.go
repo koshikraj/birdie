@@ -37,6 +37,7 @@ func New(b *bus.Bus, log *slog.Logger) http.Handler {
 	mux.HandleFunc("PUT /v1/sessions/{id}", s.auth(s.reportSession))
 	mux.HandleFunc("DELETE /v1/sessions/{id}", s.auth(s.endSession))
 	mux.HandleFunc("GET /v1/threads/{id}", s.auth(s.thread))
+	mux.HandleFunc("PATCH /v1/threads/{id}", s.auth(s.renameThread))
 	return mux
 }
 
@@ -160,7 +161,29 @@ func (s *server) thread(w http.ResponseWriter, r *http.Request, a bus.Agent) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
+	t, err := s.b.ThreadInfo(r.Context(), r.PathValue("id"), a.Name)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"thread": t, "messages": msgs})
+}
+
+// renameThread gives a thread you're in a new title.
+func (s *server) renameThread(w http.ResponseWriter, r *http.Request, a bus.Agent) {
+	var in struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(&in); err != nil {
+		s.fail(w, errors.Join(bus.ErrInvalid, err))
+		return
+	}
+	t, err := s.b.RenameThread(r.Context(), r.PathValue("id"), a.Name, in.Title)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
 }
 
 func (s *server) fail(w http.ResponseWriter, err error) {

@@ -131,9 +131,19 @@ func (c *Client) Inbox(ctx context.Context, threadID string, wait time.Duration)
 	return out.Messages, c.do(ctx, http.MethodGet, "/v1/inbox?"+q.Encode(), nil, &out)
 }
 
-func (c *Client) Thread(ctx context.Context, threadID string) ([]bus.Message, error) {
-	var out struct{ Messages []bus.Message }
-	return out.Messages, c.do(ctx, http.MethodGet, "/v1/threads/"+url.PathEscape(threadID), nil, &out)
+func (c *Client) Thread(ctx context.Context, threadID string) (bus.Thread, []bus.Message, error) {
+	var out struct {
+		Thread   bus.Thread
+		Messages []bus.Message
+	}
+	err := c.do(ctx, http.MethodGet, "/v1/threads/"+url.PathEscape(threadID), nil, &out)
+	return out.Thread, out.Messages, err
+}
+
+// RenameThread gives a thread the agent is in a new title.
+func (c *Client) RenameThread(ctx context.Context, threadID, title string) (bus.Thread, error) {
+	var t bus.Thread
+	return t, c.do(ctx, http.MethodPatch, "/v1/threads/"+url.PathEscape(threadID), map[string]string{"title": title}, &t)
 }
 
 // Ack confirms the agent got a claimed message.

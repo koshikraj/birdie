@@ -50,10 +50,11 @@ Usage:
   birdie agent prompt grok-bot [--save] [--url URL]
   birdie session list [--all]
   birdie session default AGENT [NAME]
-  birdie send --as NAME --to AGENT[/SESSION] [--thread ID] [--context TEXT] [--wanted TEXT] MESSAGE
+  birdie send --as NAME --to AGENT[/SESSION] [--thread ID | --title TEXT] [--context TEXT] [--wanted TEXT] MESSAGE
   birdie reply --as NAME MSG_ID MESSAGE
   birdie inbox --as NAME [--wait 30s] [--thread ID]
   birdie thread THREAD_ID|MSG_ID [--full]
+  birdie thread rename THREAD_ID "TITLE"
   birdie version
 
 Each agent's token is stored in %s/<name> (mode 0600).
@@ -306,6 +307,7 @@ func send(ctx context.Context, args []string) error {
 	to := fs.String("to", "", "recipient agent")
 	replyTo := fs.String("reply-to", "", "message_id being answered")
 	thread := fs.String("thread", "", "thread to continue")
+	title := fs.String("title", "", "title for a new thread (default: from the message)")
 	ctxText := fs.String("context", "", "supporting context")
 	wanted := fs.String("wanted", "", "result wanted back")
 	c, _, pos, err := agentClient(fs, args)
@@ -319,11 +321,15 @@ func send(ctx context.Context, args []string) error {
 	if *wanted != "" {
 		meta["wanted"] = *wanted
 	}
-	m, err := c.Send(ctx, bus.SendInput{To: *to, Content: strings.Join(pos, " "), InReplyTo: *replyTo, ThreadID: *thread, Meta: meta})
+	m, err := c.Send(ctx, bus.SendInput{To: *to, Content: strings.Join(pos, " "), InReplyTo: *replyTo, ThreadID: *thread, Title: *title, Meta: meta})
 	if err != nil {
 		return err
 	}
-	fmt.Printf("sent %s (thread %s)\n", m.ID, m.ThreadID)
+	if m.ThreadTitle != "" {
+		fmt.Printf("sent %s (thread %s, %q)\n", m.ID, m.ThreadID, m.ThreadTitle)
+	} else {
+		fmt.Printf("sent %s (thread %s)\n", m.ID, m.ThreadID)
+	}
 	if m.Note != "" {
 		fmt.Println(m.Note)
 	}

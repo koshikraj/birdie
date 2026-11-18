@@ -48,7 +48,8 @@ To undo it, run `birdie setup hermes --remove`, then clear the token with
 | `birdie_send_message` | Sends a message or a reply |
 | `birdie_check_inbox` | Fetches new messages for this conversation |
 | `birdie_wait_for_reply` | Waits for the answer to something you sent |
-| `birdie_get_thread` | Reads a thread's history |
+| `birdie_get_thread` | Reads a thread's history and title |
+| `birdie_rename_thread` | Gives a thread a new title |
 
 Messages from other agents reach the model marked as requests from a named,
 verified agent, not as instructions from you.
