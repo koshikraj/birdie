@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -46,6 +47,14 @@ CREATE INDEX IF NOT EXISTS messages_thread ON messages(thread_id, seq);
 CREATE TABLE IF NOT EXISTS state (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS threads (
+	id         TEXT PRIMARY KEY,
+	title      TEXT NOT NULL DEFAULT '',
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL,
+	renamed_by TEXT NOT NULL DEFAULT '',
+	renamed_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS sessions (
 	agent     TEXT NOT NULL,
@@ -104,6 +113,10 @@ func Open(path string) (*SQLite, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate %s: %w", path, err)
 	}
+	if err := recordThreads(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate %s: %w", path, err)
+	}
 	return &SQLite{db: db}, nil
 }
 
@@ -120,6 +133,99 @@ func addColumns(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// recordThreads gives threads from before birdie kept thread records one,
+// named after their first message.
+func recordThreads(db *sql.DB) error {
+	rows, err := db.Query(`SELECT m.thread_id, m.sender, m.content, m.created_at FROM messages m
+		JOIN (SELECT MIN(seq) AS seq FROM messages GROUP BY thread_id) f ON f.seq = m.seq
+		WHERE NOT EXISTS (SELECT 1 FROM threads t WHERE t.id = m.thread_id)`)
+	if err != nil {
+		return err
+	}
+	var missing []bus.Thread
+	for rows.Next() {
+		var t bus.Thread
+		var content string
+		var created int64
+		if err := rows.Scan(&t.ID, &t.CreatedBy, &content, &created); err != nil {
+			rows.Close()
+			return err
+		}
+		t.Title, t.CreatedAt = bus.TitleFrom(content), time.UnixMilli(created).UTC()
+		missing = append(missing, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, t := range missing {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO threads (id, title, created_by, created_at) VALUES (?, ?, ?, ?)`,
+			t.ID, t.Title, t.CreatedBy, t.CreatedAt.UnixMilli()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SQLite) EnsureThread(ctx context.Context, t bus.Thread) error {
+	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO threads (id, title, created_by, created_at) VALUES (?, ?, ?, ?)`,
+		t.ID, t.Title, t.CreatedBy, t.CreatedAt.UnixMilli())
+	return err
+}
+
+func (s *SQLite) GetThread(ctx context.Context, id string) (bus.Thread, error) {
+	t := bus.Thread{ID: id}
+	var created, renamed int64
+	err := s.db.QueryRowContext(ctx, `SELECT title, created_by, created_at, renamed_by, renamed_at FROM threads WHERE id = ?`, id).
+		Scan(&t.Title, &t.CreatedBy, &created, &t.RenamedBy, &renamed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return t, fmt.Errorf("%w: thread %q", bus.ErrNotFound, id)
+	} else if err != nil {
+		return t, err
+	}
+	t.CreatedAt, t.RenamedAt = time.UnixMilli(created).UTC(), unixMilli(renamed)
+	return t, nil
+}
+
+func (s *SQLite) RenameThread(ctx context.Context, id, title, by string, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE threads SET title = ?, renamed_by = ?, renamed_at = ? WHERE id = ?`, title, by, at.UnixMilli(), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("%w: thread %q", bus.ErrNotFound, id)
+	}
+	return nil
+}
+
+func (s *SQLite) ThreadTitles(ctx context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	seen := map[string]bool{}
+	var args []any
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			args = append(args, id)
+		}
+	}
+	if len(args) == 0 {
+		return out, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, title FROM threads WHERE id IN (?`+strings.Repeat(", ?", len(args)-1)+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, title string
+		if err := rows.Scan(&id, &title); err != nil {
+			return nil, err
+		}
+		out[id] = title
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLite) Close() error { return s.db.Close() }

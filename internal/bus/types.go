@@ -170,11 +170,13 @@ type SessionInput struct {
 }
 
 type Message struct {
-	ID        string `json:"id"`
-	ThreadID  string `json:"thread_id"`
-	InReplyTo string `json:"in_reply_to,omitempty"`
-	From      string `json:"from"`
-	To        string `json:"to"`
+	ID       string `json:"id"`
+	ThreadID string `json:"thread_id"`
+	// ThreadTitle is the thread's title, as it was when the message was read.
+	ThreadTitle string `json:"thread_title,omitempty"`
+	InReplyTo   string `json:"in_reply_to,omitempty"`
+	From        string `json:"from"`
+	To          string `json:"to"`
 	// FromSession and ToSession pin the message to sessions of those agents.
 	// An empty ToSession means whichever session takes new conversations.
 	FromSession string            `json:"from_session,omitempty"`
@@ -191,9 +193,12 @@ type Message struct {
 }
 
 type SendInput struct {
-	To        string            `json:"to"`
-	Content   string            `json:"content"`
-	ThreadID  string            `json:"thread_id,omitempty"`
+	To       string `json:"to"`
+	Content  string `json:"content"`
+	ThreadID string `json:"thread_id,omitempty"`
+	// Title names a thread this message starts; it's ignored in one already
+	// going. Without it, the thread is named after the message.
+	Title     string            `json:"title,omitempty"`
 	InReplyTo string            `json:"in_reply_to,omitempty"`
 	Meta      map[string]string `json:"meta,omitempty"`
 	// FromSession is the sending session, so an answer can come back to it.
@@ -245,6 +250,14 @@ type Store interface {
 	// Thread returns every message in the thread once agent is in it, and
 	// none before.
 	Thread(ctx context.Context, threadID, agent string) ([]Message, error)
+	// EnsureThread writes t if its thread has no record yet.
+	EnsureThread(ctx context.Context, t Thread) error
+	// GetThread returns a thread's record.
+	GetThread(ctx context.Context, id string) (Thread, error)
+	// RenameThread sets a thread's title, saying who did and when.
+	RenameThread(ctx context.Context, id, title, by string, at time.Time) error
+	// ThreadTitles maps the given thread ids to their titles.
+	ThreadTitles(ctx context.Context, ids []string) (map[string]string, error)
 	// TakenBy is the session that took message id, or "" if none has.
 	TakenBy(ctx context.Context, id string) (string, error)
 	// ThreadSessions are the sessions of agent that took part in the thread,

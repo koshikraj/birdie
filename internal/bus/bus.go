@@ -331,6 +331,14 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 	if thread == "" {
 		thread = "thr_" + id
 	}
+	// A new thread is named now: as asked, or after this message.
+	title := CleanTitle(in.Title, MaxTitleRunes)
+	if title == "" {
+		title = TitleFrom(in.Content)
+	}
+	if err := b.store.EnsureThread(ctx, Thread{ID: thread, Title: title, CreatedBy: from, CreatedAt: time.Now().UTC()}); err != nil {
+		return Message{}, err
+	}
 	m := Message{
 		ID:          "msg_" + id,
 		ThreadID:    thread,
@@ -367,7 +375,7 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 		default:
 		}
 	}
-	return m, nil
+	return b.withTitles(ctx, []Message{m})[0], nil
 }
 
 // Receive claims queued messages for agent, long-polling up to wait when the
@@ -394,7 +402,7 @@ func (b *Bus) ReceiveFor(ctx context.Context, in ReceiveInput) ([]Message, error
 					b.emitMessage(m.Status, m, in.Session, "")
 				}
 			}
-			return msgs, err
+			return b.withTitles(ctx, msgs), err
 		}
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
@@ -653,7 +661,7 @@ func (b *Bus) Thread(ctx context.Context, threadID, agent string) ([]Message, er
 	if len(msgs) == 0 {
 		return nil, fmt.Errorf("%w: thread %q", ErrNotFound, threadID)
 	}
-	return msgs, nil
+	return b.withTitles(ctx, msgs), nil
 }
 
 func (b *Bus) subscribe(agent string) chan struct{} {
@@ -718,7 +726,7 @@ func (b *Bus) deliverDue(ctx context.Context) {
 		err := fmt.Errorf("no deliverer for kind %q", o.Agent.Delivery)
 		if d, ok := b.deliverers[o.Agent.Delivery]; ok {
 			dctx, cancel := context.WithTimeout(ctx, deliverTimeout)
-			err = d.Deliver(dctx, o.Agent, o.Message)
+			err = d.Deliver(dctx, o.Agent, b.withTitles(ctx, []Message{o.Message})[0])
 			cancel()
 		}
 		if ctx.Err() != nil {

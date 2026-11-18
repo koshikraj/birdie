@@ -3,9 +3,12 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"birdie/internal/bus"
 	"birdie/internal/store"
 )
 
@@ -39,5 +42,42 @@ VALUES ('msg_old', 'thr_old', 'a', 'b', 'hello', 'queued', 1);`); err != nil {
 			t.Fatalf("m = %+v, %v", m, err)
 		}
 		st.Close()
+	}
+}
+
+// Threads from before birdie kept thread records get one when the database
+// opens, named after their first message.
+func TestOpenNamesOlderThreads(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bus.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC()
+	for i, m := range []bus.Message{
+		{ID: "msg_1", ThreadID: "thr_old", From: "alice", To: "bob", Content: "\n# Old plan\nmore", Status: bus.StatusQueued, CreatedAt: at},
+		{ID: "msg_2", ThreadID: "thr_old", From: "bob", To: "alice", Content: "a later message", Status: bus.StatusQueued, CreatedAt: at.Add(time.Second)},
+	} {
+		if err := st.InsertMessage(ctx, m); err != nil {
+			t.Fatal(i, err)
+		}
+	}
+	if _, err := st.GetThread(ctx, "thr_old"); !errors.Is(err, bus.ErrNotFound) {
+		t.Fatalf("before reopening: err = %v, want ErrNotFound", err)
+	}
+	st.Close()
+
+	if st, err = store.Open(path); err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	th, err := st.GetThread(ctx, "thr_old")
+	if err != nil || th.Title != "Old plan" || th.CreatedBy != "alice" {
+		t.Fatalf("after reopening: %+v, err %v", th, err)
+	}
+	titles, err := st.ThreadTitles(ctx, []string{"thr_old", "thr_old", "thr_missing"})
+	if err != nil || len(titles) != 1 || titles["thr_old"] != "Old plan" {
+		t.Fatalf("titles = %v, err %v", titles, err)
 	}
 }
