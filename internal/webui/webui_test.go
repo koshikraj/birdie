@@ -379,3 +379,34 @@ func TestThreadTitlesInTheWebApp(t *testing.T) {
 		t.Fatalf("rename someone else's thread: %s", resp.Status)
 	}
 }
+
+// Pages asked for on localhost move to 127.0.0.1, where birdie ui signs you
+// in; the API and 127.0.0.1 itself stay put.
+func TestLocalhostPagesMoveTo127(t *testing.T) {
+	r := newRig(t)
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	get := func(path, host string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest("GET", r.srv.URL+path, nil)
+		req.Host = host
+		resp, err := noFollow.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	resp := get("/ui/messages?x=1", "localhost:7777")
+	if resp.StatusCode != http.StatusTemporaryRedirect || resp.Header.Get("Location") != "http://127.0.0.1:7777/ui/messages?x=1" {
+		t.Fatalf("localhost page: %s to %q", resp.Status, resp.Header.Get("Location"))
+	}
+	if resp := get("/ui/", "localhost"); resp.Header.Get("Location") != "http://127.0.0.1/ui/" {
+		t.Fatalf("localhost without a port: %s to %q", resp.Status, resp.Header.Get("Location"))
+	}
+	if resp := get("/ui/api/me", "localhost:7777"); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("API on localhost: %s, want 401 without a redirect", resp.Status)
+	}
+	if resp := get("/ui/messages", "127.0.0.1:7777"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("page on 127.0.0.1: %s", resp.Status)
+	}
+}
