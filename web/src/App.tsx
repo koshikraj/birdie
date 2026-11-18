@@ -17,6 +17,7 @@ import { Signal } from './components/Signal';
  * taken out of the address bar first so it never lingers in history.
  */
 async function signInNow() {
+  let note = '';
   const m = window.location.hash.match(/(?:^#|[&/?])login=([^&]+)/);
   if (m) {
     let code = m[1];
@@ -30,17 +31,18 @@ async function signInNow() {
     try {
       await api.login(code);
     } catch (err) {
-      if (err instanceof ApiFailure && err.status >= 400 && err.status < 500) {
-        connection.signedOut('That sign-in link has expired or was already used.');
-        return;
-      }
+      // An old link doesn't sign you out: say so only if you aren't signed in already.
+      if (err instanceof ApiFailure && err.status >= 400 && err.status < 500) note = 'That sign-in link has expired or was already used.';
     }
   }
   try {
-    await api.me();
+    await api.checkSignedIn();
     connection.signedIn();
   } catch (err) {
-    if (err instanceof ApiFailure && err.status === 401) return; // The client already showed sign-in.
+    if (err instanceof ApiFailure && err.status === 401) {
+      connection.signedOut(note);
+      return;
+    }
     // birdie isn't reachable: show the app with its banner. A 401 later still shows sign-in.
     connection.signedIn();
   }
