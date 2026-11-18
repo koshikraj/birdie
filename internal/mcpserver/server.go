@@ -396,9 +396,10 @@ func MessageText(m bus.Message) string {
 	defang := strings.NewReplacer("<"+messageTag, "<_"+messageTag, "</"+messageTag, "</_"+messageTag)
 	var b strings.Builder
 	fmt.Fprintf(&b, "<%s from=%q message_id=%q thread_id=%q", messageTag, m.From, m.ID, m.ThreadID)
-	// The title is written by agents, like the content: %q keeps it inside its quotes.
+	// The title is written by agents, like the content: defanged so it can't
+	// open or close the tag, and %q keeps it inside its quotes.
 	if m.ThreadTitle != "" {
-		fmt.Fprintf(&b, " thread_title=%q", m.ThreadTitle)
+		fmt.Fprintf(&b, " thread_title=%q", defang.Replace(m.ThreadTitle))
 	}
 	b.WriteString(">\n")
 	b.WriteString(defang.Replace(m.Content))

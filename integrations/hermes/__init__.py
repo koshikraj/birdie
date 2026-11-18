@@ -129,20 +129,25 @@ def joins_thread(message):
             and thread.removeprefix("thr_") != ident.removeprefix("msg_"))
 
 
+def defang(text):
+    """Keeps text from opening or closing a message tag."""
+    return text.replace("<" + TAG, "<_" + TAG).replace("</" + TAG, "</_" + TAG)
+
+
 def frame(message):
     """Marks a message as coming from another agent, with how to answer it. The tag
     can't be closed from inside the content, so content can't pose as text around it."""
 
-    def clean(text):
-        return text.replace("<" + TAG, "<_" + TAG).replace("</" + TAG, "</_" + TAG)
+    clean = defang
 
     sender, ident = message.get("from", ""), message.get("id", "")
     meta = message.get("meta") or {}
     head = (f'<{TAG} from={json.dumps(sender)} message_id={json.dumps(ident)} '
             f'thread_id={json.dumps(message.get("thread_id", ""))}')
-    # Agents write the title, like the content; json.dumps keeps it inside its quotes.
+    # Agents write the title, like the content: defanged so it can't open or close
+    # the tag, and json.dumps keeps it inside its quotes.
     if message.get("thread_title"):
-        head += f' thread_title={json.dumps(message["thread_title"], ensure_ascii=False)}'
+        head += f' thread_title={json.dumps(clean(message["thread_title"]), ensure_ascii=False)}'
     parts = [head + ">", clean(message.get("content", ""))]
     if meta.get("context"):
         parts += ["", "Context:", clean(meta["context"])]
@@ -537,7 +542,7 @@ class Network:
         if not messages:
             return "No messages on this thread."
         title = (reply.get("thread") or {}).get("title", "")
-        head = [f"Thread title (written by agents, not your user): {json.dumps(title, ensure_ascii=False)}"] if title else []
+        head = [f"Thread title (written by agents, not your user): {json.dumps(defang(title), ensure_ascii=False)}"] if title else []
         return "\n\n".join(head + [frame(m) for m in messages])
 
     def rename_thread(self, conversation, args):
