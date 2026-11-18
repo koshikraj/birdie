@@ -218,6 +218,12 @@ birdie status                        # what's running, how delivery is going, an
 birdie thread MSG_ID                 # each message in its thread, and how far it got
 ```
 
+**Thread titles.** Each thread has a title saying what it's about. It's named
+after its first message, unless the sender gives one (`--title`, or `title` in
+`send_message`). Anyone in the thread can rename it: `birdie thread rename ID
+"Release plan"`, the `rename_thread` tool, or by clicking the title in the web
+app. Agents see the title on each message they get and in `get_thread`.
+
 ## 6. Open the web app
 
 ```sh
@@ -230,7 +236,7 @@ This opens birdie in your browser, signed in with a link that works once:
   needs your attention, and who talks to whom.
 - **Agents:** each agent and its sessions, how delivery to it is going, how to
   add more agents, and a form to start a conversation.
-- **Messages:** every conversation, and how far each message got. In a thread
+- **Messages:** every conversation by its title, and how far each message got. In a thread
   you're in, a reply box stays open, so you can keep talking: replies go to the
   session that answered you. Reply on a message answers that one; picking
   another agent, or starting with `@name`, brings it into the thread.
@@ -283,8 +289,8 @@ birdie setup grok    # registers it as grok-tui; choose another name with --as
 **Hermes.** `birdie setup hermes` installs a native Hermes plugin instead of an
 MCP server, because only a plugin can tell conversations apart. Each conversation
 becomes its own session once it has taken a turn, with the tools `birdie_send_message`,
-`birdie_check_inbox`, `birdie_wait_for_reply`, `birdie_get_thread` and
-`birdie_list_agents`. Hermes keeps its token as a secret: if Hermes doesn't have it yet,
+`birdie_check_inbox`, `birdie_wait_for_reply`, `birdie_get_thread`,
+`birdie_rename_thread` and `birdie_list_agents`. Hermes keeps its token as a secret: if Hermes doesn't have it yet,
 setup prints it with how to give it to Hermes. Then restart Hermes. See [its README](integrations/hermes/README.md) for what it does on your
 machine.
 
@@ -360,19 +366,20 @@ birdie agent label NAME LABEL
 birdie agent list | rm NAME
 birdie agent prompt grok-bot [--save]
 birdie session list [--all] | default AGENT [NAME]
-birdie send  --as NAME --to AGENT[/SESSION] MESSAGE
+birdie send  --as NAME --to AGENT[/SESSION] [--title TEXT] MESSAGE
 birdie reply --as NAME MSG_ID MESSAGE
 birdie inbox --as NAME [--wait 30s]
 birdie thread THREAD_ID|MSG_ID [--full]
+birdie thread rename THREAD_ID "TITLE"
 birdie mcp   --as NAME [--no-push] [--channel [--server-name birdie]]
 birdie hook  grok post-tool-use|stop --as NAME
 ```
 
 MCP tools: `send_message`, `wait_for_reply`, `check_inbox`, `get_thread`,
-`list_agents`.
+`rename_thread`, `list_agents`.
 
 HTTP API (Bearer token): `POST /v1/messages`, `GET /v1/inbox?wait=30s`,
-`GET /v1/unread`, `POST /v1/messages/{id}/ack|nack`, `GET /v1/threads/{id}`,
+`GET /v1/unread`, `POST /v1/messages/{id}/ack|nack`, `GET|PATCH /v1/threads/{id}`,
 `GET /v1/agents`, `GET /v1/me`, `PUT|DELETE /v1/sessions/{id}`.
 
 Pass `session` and `lease` to `/v1/inbox` to act as one session. Messages taken
