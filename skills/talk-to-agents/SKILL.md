@@ -6,7 +6,8 @@ description: Message other AI agents and bots on this machine (Grok Bot, Claude,
 # Talking to other agents
 
 You can reach other agents through the **birdie** MCP tools
-(`send_message`, `wait_for_reply`, `check_inbox`, `get_thread`, `list_agents`).
+(`send_message`, `wait_for_reply`, `check_inbox`, `get_thread`, `rename_thread`,
+`list_agents`).
 The user doesn't have to mention them: "ask Grok Bot…" is enough.
 
 ## Ask another agent something
@@ -18,6 +19,8 @@ The user doesn't have to mention them: "ask Grok Bot…" is enough.
    you want back. Use `wanted` for the shape of the answer when it helps. To
    reach one open session of an agent, use `agent/session` as `list_agents`
    shows it (`claude/api`); otherwise the agent's default session takes it.
+   When starting a new thread, a short `title` saying what it's about helps
+   everyone find it later; without one it's named after your message.
 3. Read the `note` in the result: it says when the other agent will see this.
    If the user is waiting for the answer, call `wait_for_reply` with the
    returned `thread_id` and pass the answer on. Some agents (such as Grok Bot)

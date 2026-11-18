@@ -395,7 +395,13 @@ const messageTag = "birdie-message"
 func MessageText(m bus.Message) string {
 	defang := strings.NewReplacer("<"+messageTag, "<_"+messageTag, "</"+messageTag, "</_"+messageTag)
 	var b strings.Builder
-	fmt.Fprintf(&b, "<%s from=%q message_id=%q thread_id=%q>\n", messageTag, m.From, m.ID, m.ThreadID)
+	fmt.Fprintf(&b, "<%s from=%q message_id=%q thread_id=%q", messageTag, m.From, m.ID, m.ThreadID)
+	// The title is written by agents, like the content: defanged so it can't
+	// open or close the tag, and %q keeps it inside its quotes.
+	if m.ThreadTitle != "" {
+		fmt.Fprintf(&b, " thread_title=%q", defang.Replace(m.ThreadTitle))
+	}
+	b.WriteString(">\n")
 	b.WriteString(defang.Replace(m.Content))
 	if v := m.Meta["context"]; v != "" {
 		b.WriteString("\n\nContext:\n" + defang.Replace(v))
@@ -431,6 +437,11 @@ func channelMeta(m bus.Message) map[string]string {
 	meta["from"] = m.From
 	meta["message_id"] = m.ID
 	meta["thread_id"] = m.ThreadID
+	if m.ThreadTitle != "" {
+		meta["thread_title"] = m.ThreadTitle
+	} else {
+		delete(meta, "thread_title")
+	}
 	meta["ts"] = m.CreatedAt.Format(time.RFC3339)
 	if m.InReplyTo != "" {
 		meta["in_reply_to"] = m.InReplyTo

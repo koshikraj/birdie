@@ -57,7 +57,7 @@ export function startEvents(client: QueryClient): () => void {
     } catch {
       return;
     }
-    if (!e || (e.kind !== 'message' && e.kind !== 'session')) return;
+    if (!e || (e.kind !== 'message' && e.kind !== 'session' && e.kind !== 'thread')) return;
     listeners.forEach((l) => {
       try {
         l(e);
@@ -65,7 +65,7 @@ export function startEvents(client: QueryClient): () => void {
         console.error(err);
       }
     });
-    refetch(e.kind === 'message' ? ['overview', 'messages'] : ['overview']);
+    refetch(e.kind === 'message' || e.kind === 'thread' ? ['overview', 'messages'] : ['overview']);
   };
 
   const connect = () => {
@@ -80,6 +80,7 @@ export function startEvents(client: QueryClient): () => void {
     });
     es.addEventListener('message', handle as EventListener);
     es.addEventListener('session', handle as EventListener);
+    es.addEventListener('thread', handle as EventListener);
     es.addEventListener('error', () => {
       wasDown = true;
       connection.streamDown();

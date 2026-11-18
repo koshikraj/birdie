@@ -123,12 +123,23 @@ func TestToolsRoundTrip(t *testing.T) {
 	s, cursor := setup(t, false)
 
 	tools := s.call("tools/list", map[string]any{})["tools"].([]any)
-	if len(tools) != 5 {
+	if len(tools) != 6 {
 		t.Fatalf("got %d tools", len(tools))
 	}
 
-	sent := toolJSON(t, s.call("tools/call", map[string]any{"name": "send_message", "arguments": map[string]any{"to": "cursor", "content": "run the tests", "wanted": "pass/fail"}}))
+	sent := toolJSON(t, s.call("tools/call", map[string]any{"name": "send_message", "arguments": map[string]any{"to": "cursor", "content": "run the tests", "wanted": "pass/fail", "title": "  Test run\n for main "}}))
 	thread := sent["thread_id"].(string)
+	if sent["thread_title"] != "Test run for main" {
+		t.Fatalf("thread_title = %v", sent["thread_title"])
+	}
+	renamed := toolJSON(t, s.call("tools/call", map[string]any{"name": "rename_thread", "arguments": map[string]any{"thread_id": thread, "title": "CI on main"}}))
+	if renamed["title"] != "CI on main" || renamed["renamed_by"] != "claude" {
+		t.Fatalf("rename_thread = %v", renamed)
+	}
+	read := toolJSON(t, s.call("tools/call", map[string]any{"name": "get_thread", "arguments": map[string]any{"thread_id": thread}}))
+	if read["thread"].(map[string]any)["title"] != "CI on main" {
+		t.Fatalf("get_thread = %v", read)
+	}
 
 	// The other agent answers over plain HTTP while Claude waits.
 	go func() {
