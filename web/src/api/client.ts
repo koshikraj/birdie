@@ -83,6 +83,7 @@ export const api = {
   threads: (limit = 30) => request<ThreadList>('GET', '/threads?limit=' + limit),
   thread: (id: string) => request<Thread>('GET', '/threads/' + encodeURIComponent(id)),
   send: (input: SendInput) => request<SendResult>('POST', '/messages', input),
+  renameThread: (id: string, title: string) => request<{ id: string; title: string }>('PATCH', '/threads/' + encodeURIComponent(id), { title }),
   tools: () => request<ToolList>('GET', '/tools'),
   login: (code: string) => request<void>('POST', '/login', { code }),
   me: () => request<unknown>('GET', '/me'),

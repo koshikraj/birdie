@@ -487,6 +487,7 @@ function SendForm({
   const client = useQueryClient();
   const targets = useMemo(() => targetsOf(o), [o]);
   const [text, setText] = useState('');
+  const [title, setTitle] = useState('');
   const [invalid, setInvalid] = useState(false);
   const [sendError, setSendError] = useState('');
 
@@ -499,6 +500,7 @@ function SendForm({
     onSuccess: (result) => {
       setSendError('');
       setText('');
+      setTitle('');
       client.invalidateQueries({ queryKey: keys.overview });
       client.invalidateQueries({ queryKey: keys.threads });
       // The conversation goes on in its thread, where the answer will come.
@@ -520,7 +522,7 @@ function SendForm({
     }
     if (!value) return;
     setInvalid(false);
-    mutation.mutate({ to: value, content: text.trim() });
+    mutation.mutate({ to: value, content: text.trim(), title: title.trim() || undefined });
   };
 
   return (
@@ -549,6 +551,23 @@ function SendForm({
             }))}
           />
           <span id="send-to-note" className="field-note">{resolve(o, value)}</span>
+        </div>
+        <div className="field">
+          <label htmlFor="send-thread-title">
+            Title <span className="field-optional">(optional)</span>
+          </label>
+          <input
+            id="send-thread-title"
+            className="textarea text-input"
+            value={title}
+            maxLength={100}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="What it's about. Left empty, it's named after your message."
+            aria-describedby="send-thread-title-note"
+          />
+          <span id="send-thread-title-note" className="field-note">
+            Names the new thread. Anyone in it can rename it later.
+          </span>
         </div>
         <div className="field">
           <label htmlFor="send-text">Message</label>

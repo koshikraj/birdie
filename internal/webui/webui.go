@@ -54,6 +54,7 @@ func New(o Options) http.Handler {
 	mux.HandleFunc("POST /ui/api/messages", s.signedIn(s.send))
 	mux.HandleFunc("GET /ui/api/threads", s.signedIn(s.threads))
 	mux.HandleFunc("GET /ui/api/threads/{id}", s.signedIn(s.thread))
+	mux.HandleFunc("PATCH /ui/api/threads/{id}", s.signedIn(s.renameThread))
 	mux.HandleFunc("GET /ui/api/tools", s.signedIn(s.tools))
 	mux.HandleFunc("GET /ui/api/events", s.signedIn(s.events))
 	mux.HandleFunc("GET /ui/api/", func(w http.ResponseWriter, r *http.Request) { s.fail(w, http.StatusNotFound, "no such API") })

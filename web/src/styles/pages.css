@@ -358,3 +358,26 @@
 /* Suggestions while typing @name open upward, above the reply box. */
 .chat-compose-row { position: relative; }
 .mention-list { top: auto; bottom: calc(100% + 6px); right: auto; width: min(360px, 100%); max-height: min(300px, 45vh); box-shadow: 0 -12px 28px rgb(0 0 0 / 0.14); animation-name: dd-up-in; }
+/* Thread titles: the list leads with them, and the open thread's can be renamed in place. */
+.thread-item-title { min-width: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-item-body > .thread-item-between { align-self: stretch; color: var(--ink-muted); font-size: 12px; font-weight: 400; }
+.chat-title { min-width: 0; }
+.chat-title-button {
+  max-width: 100%; display: inline-flex; align-items: center; gap: 8px;
+  margin: -4px -8px; padding: 4px 8px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: text;
+}
+.chat-title-button:hover, .chat-title-button:focus-visible { background: var(--bubble-in); }
+.chat-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-title-pencil { flex: none; color: var(--ink-muted); opacity: 0; transition: opacity 0.12s ease; }
+.chat-title-button:hover .chat-title-pencil, .chat-title-button:focus-visible .chat-title-pencil { opacity: 1; }
+@media (hover: none) { .chat-title-pencil { opacity: 1; } }
+.chat-title-edit { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.chat-title-input {
+  width: 100%; min-height: 40px; padding: 4px 10px;
+  border: 2px solid var(--accent); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
+  font-family: var(--font-display, inherit); font-size: 20px; font-weight: 600;
+}
+.chat-title-input[aria-invalid="true"] { border-color: var(--danger); }
+.text-input { resize: none; min-height: 48px; }
+.field-optional { font-weight: 400; color: var(--ink-muted); }

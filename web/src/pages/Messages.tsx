@@ -104,9 +104,10 @@ function ThreadItem({ t, on, now }: { t: ThreadSummary; on: boolean; now: number
       <TilePair a={agents[0]} b={agents[1]} more={agents.length - 2} size={30} />
       <span className="thread-item-body">
         <span className="thread-item-top">
-          <span className="thread-item-between">{agents.map(labelOf).join(' ⇄ ')}</span>
+          <span className="thread-item-title">{t.title || agents.map(labelOf).join(' ⇄ ')}</span>
           <span className="thread-item-when">{ago(t.last_at, now)}</span>
         </span>
+        {t.title && <span className="thread-item-between">{agents.map(labelOf).join(' ⇄ ')}</span>}
         <span className="thread-item-preview">
           <span className="thread-item-who">{labelOf(agentOf(t.last_from))}:</span> {t.last_text}
         </span>
@@ -206,8 +207,14 @@ function ThreadDetail({ id, target, query, now }: { id?: string; target?: string
       <div className="chat-head">
         {agents.length > 0 && <TileStack names={agents} size={38} max={4} className="chat-head-stack" />}
         <div className="chat-head-text">
-          <h2 id="thread-title" className="panel-title">{agents.map(labelOf).join(' ⇄ ') || data.id}</h2>
+          <ThreadTitle
+            key={data.id + (data.title ?? '')}
+            id={data.id}
+            title={data.title || agents.map(labelOf).join(' ⇄ ') || data.id}
+            canRename={messages.some((m) => m.from === me || m.to === me)}
+          />
           <span className="chat-sub">
+            {data.title && agents.map(labelOf).join(' ⇄ ') + ' · '}
             {messages.length} {messages.length === 1 ? 'message' : 'messages'}
             {last && ' · last ' + ago(last.created_at, now)}
           </span>
@@ -219,6 +226,8 @@ function ThreadDetail({ id, target, query, now }: { id?: string; target?: string
       {info && (
         <div id="chat-info" className="chat-info">
           <span>Thread {data.id}</span>
+          {data.created_by && <span>Started by {who(data.created_by)}{data.created_at && ' ' + ago(data.created_at, now)}</span>}
+          {data.renamed_by && <span>Renamed by {who(data.renamed_by)}{data.renamed_at && ' ' + ago(data.renamed_at, now)}</span>}
           <span>Same as: birdie thread {data.id}</span>
         </div>
       )}
@@ -284,6 +293,122 @@ function ThreadDetail({ id, target, query, now }: { id?: string; target?: string
         }}
       />
     </section>
+  );
+}
+
+/**
+ * The open thread's title. In a thread you're in, clicking it renames it:
+ * Enter or leaving the box saves, Escape doesn't.
+ */
+function ThreadTitle({ id, title, canRename }: { id: string; title: string; canRename: boolean }) {
+  const client = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const [error, setError] = useState('');
+  const box = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+
+  useEffect(() => {
+    if (editing) box.current?.select();
+  }, [editing]);
+
+  const rename = useMutation({
+    mutationFn: (t: string) => api.renameThread(id, t),
+    onSuccess: () => {
+      setEditing(false);
+      setError('');
+      client.invalidateQueries({ queryKey: keys.thread(id) });
+      client.invalidateQueries({ queryKey: keys.threads });
+    },
+    onError: (err) => {
+      done.current = false;
+      setError(err instanceof Error ? err.message : String(err));
+    },
+  });
+
+  const save = () => {
+    if (done.current) return;
+    const t = draft.trim();
+    if (!t || t === title) {
+      setEditing(false);
+      setError('');
+      return;
+    }
+    done.current = true;
+    rename.mutate(t);
+  };
+
+  if (editing) {
+    return (
+      <>
+        <h2 id="thread-title" className="visually-hidden">
+          {title}
+        </h2>
+        <form
+          className="chat-title-edit"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+        >
+          <label htmlFor="thread-title-input" className="visually-hidden">
+            Thread title
+          </label>
+          <input
+            id="thread-title-input"
+            ref={box}
+            className="chat-title-input"
+            value={draft}
+            maxLength={100}
+            disabled={rename.isPending}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'thread-title-error' : undefined}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={save}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                done.current = true;
+                setEditing(false);
+                setError('');
+              }
+            }}
+          />
+          {error && (
+            <span id="thread-title-error" className="field-error" role="alert">
+              Error: {error}
+            </span>
+          )}
+        </form>
+      </>
+    );
+  }
+  if (!canRename) {
+    return (
+      <h2 id="thread-title" className="panel-title chat-title">
+        {title}
+      </h2>
+    );
+  }
+  return (
+    <h2 id="thread-title" className="panel-title chat-title">
+      <button
+        type="button"
+        className="chat-title-button"
+        title="Rename this thread"
+        onClick={() => {
+          done.current = false;
+          setDraft(title);
+          setEditing(true);
+        }}
+      >
+        <span className="chat-title-text">{title}</span>
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" className="chat-title-pencil">
+          <path d="M11.5 2.5l2 2L6 12l-3 1 1-3 7.5-7.5z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+        </svg>
+        <span className="visually-hidden">, rename</span>
+      </button>
+    </h2>
   );
 }
 

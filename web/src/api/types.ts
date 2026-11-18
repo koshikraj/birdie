@@ -109,6 +109,8 @@ export interface Overview {
 
 export interface ThreadSummary {
   id: string;
+  /** What it's about: given when it started or renamed since, else from its first message. */
+  title?: string;
   participants: string[];
   count: number;
   last_at: string;
@@ -124,7 +126,16 @@ export interface ThreadSummary {
 export interface ThreadList { threads: ThreadSummary[] }
 
 /** GET /ui/api/threads/{thread or message id} */
-export interface Thread { id: string; messages: Tracked[] }
+export interface Thread {
+  id: string;
+  title?: string;
+  /** Who started it and who last renamed it, as labels. */
+  created_by?: string;
+  created_at?: string;
+  renamed_by?: string;
+  renamed_at?: string;
+  messages: Tracked[];
+}
 
 /** GET /ui/api/messages?limit=N: newest first. */
 export interface RecentMessages { messages: Tracked[] }
@@ -137,6 +148,8 @@ export interface SendInput {
   thread_id?: string;
   /** Answers this message: same thread, and back to the session that sent it. */
   in_reply_to?: string;
+  /** Names a thread this message starts. */
+  title?: string;
 }
 export interface SendResult {
   id: string;
@@ -194,4 +207,15 @@ export interface SessionEvent {
   at: string;
 }
 
-export type BusEvent = MessageEvent | SessionEvent;
+/** A thread was renamed. */
+export interface ThreadEvent {
+  kind: 'thread';
+  type: 'renamed';
+  thread_id: string;
+  by: string;
+  by_label: string;
+  title: string;
+  at: string;
+}
+
+export type BusEvent = MessageEvent | SessionEvent | ThreadEvent;
