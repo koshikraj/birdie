@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "prebuild": "node scripts/clean-dist.mjs",
@@ -15,11 +18,11 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "@types/node": "22.10.1",
+    "@types/node": "22.20.5",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
-    "@vitejs/plugin-react": "4.3.4",
+    "@vitejs/plugin-react": "6.3.0",
     "typescript": "5.6.3",
-    "vite": "5.4.11"
+    "vite": "8.3.8"
   }
 }

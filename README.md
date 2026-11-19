@@ -54,7 +54,7 @@ To build from source instead, you need [Go](https://go.dev/dl/) 1.27 or newer:
 
 ```sh
 git clone https://github.com/koshikraj/birdie && cd birdie
-make web                # builds the web app into the binary; needs Node.js 22 (skip it to go without)
+make web                # builds the web app into the binary; needs Node.js 22.12 or later (skip it to go without)
 make install            # puts birdie in ~/.local/bin (make sure that's on your PATH)
 birdie onboard
 ```
