@@ -42,7 +42,7 @@ func TestSetTOMLBlock(t *testing.T) {
 func TestSetupGrokAndCodexRoundTrip(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg")) // not ~/.config, so Linux runs check birdie follows it
 	t.Setenv("GROK_HOME", "")
 	t.Setenv("CODEX_HOME", "")
 	original := "model = \"x\"\n"
@@ -79,7 +79,7 @@ func TestSetupGrokAndCodexRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	backup := filepath.Join(home, ".config", "birdie", "backups", "t", ".grok_config.toml")
+	backup := filepath.Join(userConfigDir(t, home), "birdie", "backups", "t", ".grok_config.toml")
 	if b, err := os.ReadFile(backup); err != nil || string(b) != original {
 		t.Fatalf("backup = %q, %v", b, err)
 	}
@@ -141,7 +141,7 @@ func fakeTools(t *testing.T, names ...string) setupOptions {
 	}
 	t.Setenv("PATH", bin)
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg")) // not ~/.config, so Linux runs check birdie follows it
 	for _, env := range []string{"GROK_HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR"} {
 		t.Setenv(env, "")
 	}
@@ -162,11 +162,24 @@ func TestSetupAll(t *testing.T) {
 	if !strings.Contains(out.String(), "Not found on PATH: claude") {
 		t.Errorf("output: %s", out.String())
 	}
-	for _, f := range []string{".codex/config.toml", ".grok/config.toml", ".config/birdie/tokens/codex", ".config/birdie/tokens/grok-tui"} {
-		if !exists(filepath.Join(o.home, f)) {
+	tokens := filepath.Join(userConfigDir(t, o.home), "birdie", "tokens")
+	for _, f := range []string{filepath.Join(o.home, ".codex/config.toml"), filepath.Join(o.home, ".grok/config.toml"), filepath.Join(tokens, "codex"), filepath.Join(tokens, "grok-tui")} {
+		if !exists(f) {
 			t.Errorf("%s is missing", f)
 		}
 	}
+}
+
+// userConfigDir is the OS's config folder for the test's home, where birdie
+// keeps its own: $XDG_CONFIG_HOME or ~/.config on Linux, ~/Library/Application
+// Support on macOS. Set HOME first, so a test never reaches the real one.
+func userConfigDir(t *testing.T, home string) string {
+	t.Helper()
+	dir, err := os.UserConfigDir()
+	if err != nil || !strings.HasPrefix(dir, home+string(filepath.Separator)) {
+		t.Fatalf("config folder %q (%v) isn't inside the test's home %s", dir, err, home)
+	}
+	return dir
 }
 
 func TestSetupAllKeepsGoingAfterAFailure(t *testing.T) {
@@ -253,9 +266,23 @@ func TestSetupReplacesOldName(t *testing.T) {
 	}
 }
 
+// isolate gives a test a home of its own, so birdie's config folder is inside
+// it on every OS, and returns that folder: XDG_CONFIG_HOME on Linux,
+// ~/Library/Application Support on macOS.
+func isolate(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg")) // not ~/.config, so Linux runs check birdie follows it
+	base := userConfigDir(t, home)
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return base
+}
+
 func TestMigrateConfig(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
+	base := isolate(t)
 	old, dir := filepath.Join(base, "agent-bus"), filepath.Join(base, "birdie")
 
 	migrateConfig() // nothing to move
@@ -282,8 +309,7 @@ func TestMigrateConfig(t *testing.T) {
 	}
 
 	// A new folder that already exists is never overwritten.
-	base = t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
+	base = isolate(t)
 	os.MkdirAll(filepath.Join(base, "agent-bus"), 0o700)
 	os.MkdirAll(filepath.Join(base, "birdie"), 0o700)
 	migrateConfig()
@@ -295,7 +321,7 @@ func TestMigrateConfig(t *testing.T) {
 func TestEnsureAgentSavesTheLabel(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg")) // not ~/.config, so Linux runs check birdie follows it
 	ctx := context.Background()
 	db := filepath.Join(home, "bus.db")
 
