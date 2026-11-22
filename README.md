@@ -23,7 +23,8 @@ service.
 
 ```
   Claude Code ──MCP──┐                         ┌──webhook──► Grok Bot
-  Codex / Grok ──MCP─┤                         │
+  Codex / Grok /     │                         │
+  Antigravity ──MCP──┤                         │
                      ▼                         │
               birdie serve  (127.0.0.1:7777, SQLite)
                      ▲                         │
@@ -72,9 +73,9 @@ Nothing changes until you confirm. It walks through:
 
 1. **Background service:** keeps the bus running and starts it at login, using
    systemd on Linux or launchd on macOS.
-2. **What to connect:** a checklist of Claude Code, Codex, Grok CLI and Hermes if
-   they're on your PATH, plus headless Grok, headless Hermes and Grok Bot, which
-   start unticked.
+2. **What to connect:** a checklist of Claude Code, Codex, Grok CLI, Hermes and
+   Antigravity if they're on your PATH, plus headless Grok, headless Hermes,
+   headless Antigravity and Grok Bot, which start unticked.
 3. **Details:** whether messages may wake Hermes, and a working folder for each
    headless agent.
 4. **Changes:** everything it's about to do, for you to confirm.
@@ -84,7 +85,7 @@ Nothing changes until you confirm. It walks through:
 
 You can run it again at any time. Agents that are connected start ticked, and
 unticking one disconnects it; that's listed with the changes before you confirm.
-Claude Code, Codex, Grok CLI and Hermes keep their agent and token when
+Claude Code, Codex, Grok CLI, Hermes and Antigravity keep their agent and token when
 disconnected. Headless agents and Grok Bot lose theirs, so Grok Bot's routine would then need a
 new token.
 
@@ -312,6 +313,26 @@ answer with nothing open, add it over ACP:
 birdie agent add hermes-headless --acp "hermes acp" --cwd ~/hermes-work
 ```
 
+**Antigravity CLI, interactively.** `birdie setup antigravity` adds birdie to
+Antigravity's MCP servers in `~/.gemini/config/mcp_config.json`, its hooks in
+`~/.gemini/config/hooks.json` and the skill in `~/.gemini/config/skills`, keeping
+everything else in those files. The Antigravity IDE and app read the same files, so
+they connect too; Gemini CLI's `~/.gemini/settings.json` isn't touched. Messages
+appear before Antigravity's next model call or when it finishes a turn. Nothing can
+wake an idle window, so the message waits for you to prompt it. The first time it
+uses a birdie tool, Antigravity asks you to allow it.
+
+```sh
+birdie setup antigravity    # registers it as antigravity; choose another name with --as
+```
+
+To have Antigravity answer with nothing open, add it over ACP. Its Google sign-in
+stays with Antigravity (`agy acp --login`); birdie never handles it.
+
+```sh
+birdie agent add antigravity-headless --acp "agy acp" --cwd ~/antigravity-work
+```
+
 **Any other MCP client.** Add `birdie mcp --as NAME` to its MCP servers after
 `birdie agent add NAME`. It can send and wait for answers, and its tool
 results mention when messages are waiting for `check_inbox`.
@@ -357,7 +378,7 @@ birdie onboard
 birdie status
 birdie ui [--no-open]
 birdie doctor
-birdie setup claude|codex|grok|hermes|--all [--as NAME] [--remove] [--dry-run] [--wake]
+birdie setup claude|codex|grok|hermes|antigravity|--all [--as NAME] [--remove] [--dry-run] [--wake]
 birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]
 birdie service install|remove|status
 birdie agent add NAME [--description TEXT] [--label LABEL] [--webhook URL --auth-file PATH | --acp "COMMAND" ...]
