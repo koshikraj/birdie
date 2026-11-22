@@ -310,7 +310,7 @@ function ToolPanel() {
   const missing = list.filter((t) => t.found && !t.connected);
   return (
     <>
-      <p>birdie finds Claude Code, Codex, Grok CLI and Hermes on your PATH and connects them. Restart their sessions afterwards.</p>
+      <p>birdie finds Claude Code, Codex, Grok CLI, Hermes and Antigravity on your PATH and connects them. Restart their sessions afterwards.</p>
       <div>
         {tools.isPending && <p className="panel-empty">Looking for tools on this machine.</p>}
         {tools.isError && <p className="panel-empty error-text">Error: {String(tools.error.message)}</p>}
