@@ -18,6 +18,7 @@ import (
 
 	"birdie/internal/bus"
 	"birdie/internal/client"
+	"birdie/internal/mcpserver"
 	"birdie/internal/store"
 )
 
@@ -130,7 +131,7 @@ func runChecks(ctx context.Context, db, url, home string, svc serviceManager) []
 		tool := setupTools[name]
 		agent, connected := connectedAs(name, home)
 		if !connected {
-			if _, err := exec.LookPath(name); err == nil {
+			if _, err := exec.LookPath(toolCommand(name)); err == nil {
 				add(checkWarn, "%s is installed but not connected; run: birdie onboard", tool.label)
 			}
 			continue
@@ -147,6 +148,9 @@ func runChecks(ctx context.Context, db, url, home string, svc serviceManager) []
 		if msg := agentProblem(ctx, a, url, up); msg != "" {
 			add(checkFail, "%s (agent %s): %s", tool.label, agent, msg)
 			continue
+		}
+		if name == "antigravity" && !mcpserver.AntigravityHooked() {
+			add(checkWarn, "%s has no birdie hooks in %s, so its sessions only see messages when they call a birdie tool; run: birdie setup antigravity", tool.label, mcpserver.AntigravityHooksPath())
 		}
 		add(checkOK, "%s is connected as %s, %s", tool.label, agent, sessionCount(ctx, st, agent))
 	}
@@ -294,28 +298,9 @@ func serverAgent(tool, home, server string) (string, bool) {
 	def := setupTools[tool].agent
 	switch tool {
 	case "claude":
-		b, err := os.ReadFile(filepath.Join(envHome("CLAUDE_CONFIG_DIR", home), ".claude.json"))
-		if err != nil {
-			return "", false
-		}
-		var cfg struct {
-			MCPServers map[string]struct {
-				Args []string `json:"args"`
-			} `json:"mcpServers"`
-		}
-		if json.Unmarshal(b, &cfg) != nil {
-			return "", false
-		}
-		entry, ok := cfg.MCPServers[server]
-		if !ok {
-			return "", false
-		}
-		for i, arg := range entry.Args {
-			if arg == "--as" && i+1 < len(entry.Args) {
-				return entry.Args[i+1], true
-			}
-		}
-		return def, true
+		return jsonConnected(filepath.Join(envHome("CLAUDE_CONFIG_DIR", home), ".claude.json"), server, def)
+	case "antigravity":
+		return jsonConnected(filepath.Join(mcpserver.AntigravityDir(), "mcp_config.json"), server, def)
 	case "codex":
 		return tomlConnected(filepath.Join(envHome("CODEX_HOME", filepath.Join(home, ".codex")), "config.toml"), server, def)
 	case "grok":
@@ -329,6 +314,32 @@ func serverAgent(tool, home, server string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// jsonConnected reads an MCP server entry from a JSON config's mcpServers.
+func jsonConnected(path, server, def string) (string, bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	var cfg struct {
+		MCPServers map[string]struct {
+			Args []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if json.Unmarshal(b, &cfg) != nil {
+		return "", false
+	}
+	entry, ok := cfg.MCPServers[server]
+	if !ok {
+		return "", false
+	}
+	for i, arg := range entry.Args {
+		if arg == "--as" && i+1 < len(entry.Args) {
+			return entry.Args[i+1], true
+		}
+	}
+	return def, true
 }
 
 var tomlAgent = regexp.MustCompile(`"--as"\s*,\s*"([^"]+)"`)

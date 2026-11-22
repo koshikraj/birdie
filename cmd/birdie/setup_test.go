@@ -331,3 +331,129 @@ func TestEnsureAgentSavesTheLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupAntigravityRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	dir := filepath.Join(home, ".gemini", "config")
+	os.MkdirAll(dir, 0o700)
+	mcp := filepath.Join(dir, "mcp_config.json")
+	hooksPath := filepath.Join(dir, "hooks.json")
+	os.WriteFile(mcp, []byte(`{"mcpServers": {"other": {"command": "o"}}, "extra": true}`), 0o600)
+	os.WriteFile(hooksPath, []byte(`{"lint": {"PostToolUse": [{"matcher": "*", "hooks": [{"command": "lint"}]}]}}`), 0o600)
+	settings := filepath.Join(home, ".gemini", "settings.json")
+	os.WriteFile(settings, []byte(`{"theme": "x"}`), 0o600)
+
+	r := &setupRun{exe: "/bin/agent bus", agent: "me", stamp: "t", home: home}
+	if err := setupAntigravity(r); err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		MCPServers map[string]struct {
+			Command string
+			Args    []string
+		}
+		Extra bool
+	}
+	b, _ := os.ReadFile(mcp)
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if s := cfg.MCPServers["birdie"]; s.Command != "/bin/agent bus" || strings.Join(s.Args, " ") != "mcp --as me" {
+		t.Fatalf("birdie server = %+v", s)
+	}
+	if cfg.MCPServers["other"].Command != "o" || !cfg.Extra {
+		t.Fatalf("lost the rest of the config: %s", b)
+	}
+	if a, ok := connectedAs("antigravity", home); !ok || a != "me" {
+		t.Fatalf("connectedAs = %q, %v", a, ok)
+	}
+	var hooks map[string]map[string]json.RawMessage
+	b, _ = os.ReadFile(hooksPath)
+	if err := json.Unmarshal(b, &hooks); err != nil {
+		t.Fatal(err)
+	}
+	if hooks["lint"]["PostToolUse"] == nil {
+		t.Fatalf("lost the other hook: %s", b)
+	}
+	var stop []struct{ Command string }
+	json.Unmarshal(hooks["birdie"]["Stop"], &stop)
+	if len(stop) != 1 || stop[0].Command != "'/bin/agent bus' hook antigravity stop --as 'me'" {
+		t.Fatalf("stop hook = %+v", stop)
+	}
+	if hooks["birdie"]["PreInvocation"] == nil {
+		t.Fatalf("no pre-invocation hook: %s", b)
+	}
+	if !exists(filepath.Join(dir, "skills", "talk-to-agents", "SKILL.md")) {
+		t.Fatal("no skill")
+	}
+
+	// A second run changes nothing.
+	before, _ := os.ReadFile(mcp)
+	r.stamp = "t1"
+	if err := setupAntigravity(r); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(mcp); string(after) != string(before) {
+		t.Fatalf("re-run changed the config:\n%s\n---\n%s", before, after)
+	}
+	if exists(filepath.Join(home, ".config", "birdie", "backups", "t1")) {
+		t.Fatal("re-run backed up files it didn't change")
+	}
+
+	r.remove, r.stamp = true, "t2"
+	if err := setupAntigravity(r); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(mcp)
+	if strings.Contains(string(b), "birdie") || !strings.Contains(string(b), `"other"`) || !strings.Contains(string(b), `"extra"`) {
+		t.Fatalf("config after remove: %s", b)
+	}
+	b, _ = os.ReadFile(hooksPath)
+	if strings.Contains(string(b), "birdie") || !strings.Contains(string(b), `"lint"`) {
+		t.Fatalf("hooks after remove: %s", b)
+	}
+	if exists(filepath.Join(dir, "skills", "talk-to-agents")) {
+		t.Fatal("skill left behind")
+	}
+	if b, _ := os.ReadFile(settings); string(b) != `{"theme": "x"}` {
+		t.Fatalf("touched Gemini CLI's settings: %s", b)
+	}
+}
+
+func TestSetupAntigravityEmptyConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	dir := filepath.Join(home, ".gemini", "config")
+	os.MkdirAll(dir, 0o700)
+	// Antigravity creates mcp_config.json empty.
+	os.WriteFile(filepath.Join(dir, "mcp_config.json"), nil, 0o644)
+	r := &setupRun{exe: "/bin/birdie", agent: "antigravity", stamp: "t", home: home}
+	if err := setupAntigravity(r); err != nil {
+		t.Fatal(err)
+	}
+	if a, ok := connectedAs("antigravity", home); !ok || a != "antigravity" {
+		t.Fatalf("connectedAs = %q, %v", a, ok)
+	}
+	if fi, _ := os.Stat(filepath.Join(dir, "mcp_config.json")); fi.Mode().Perm() != 0o644 {
+		t.Errorf("mode = %v", fi.Mode())
+	}
+	r.remove = true
+	if err := setupAntigravity(r); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := connectedAs("antigravity", home); ok {
+		t.Fatal("still connected")
+	}
+	if exists(filepath.Join(dir, "hooks.json")) {
+		t.Fatal("setup's own hooks file left behind")
+	}
+
+	os.WriteFile(filepath.Join(dir, "mcp_config.json"), []byte("{not json"), 0o644)
+	r.remove = false
+	if err := setupAntigravity(r); err == nil {
+		t.Fatal("broken JSON should stop setup, not be overwritten")
+	}
+}
