@@ -129,17 +129,26 @@ def joins_thread(message):
             and thread.removeprefix("thr_") != ident.removeprefix("msg_"))
 
 
+def defang(text):
+    """Keeps text from opening or closing a message tag."""
+    return text.replace("<" + TAG, "<_" + TAG).replace("</" + TAG, "</_" + TAG)
+
+
 def frame(message):
     """Marks a message as coming from another agent, with how to answer it. The tag
     can't be closed from inside the content, so content can't pose as text around it."""
 
-    def clean(text):
-        return text.replace("<" + TAG, "<_" + TAG).replace("</" + TAG, "</_" + TAG)
+    clean = defang
 
     sender, ident = message.get("from", ""), message.get("id", "")
     meta = message.get("meta") or {}
-    parts = [f'<{TAG} from={json.dumps(sender)} message_id={json.dumps(ident)} '
-             f'thread_id={json.dumps(message.get("thread_id", ""))}>', clean(message.get("content", ""))]
+    head = (f'<{TAG} from={json.dumps(sender)} message_id={json.dumps(ident)} '
+            f'thread_id={json.dumps(message.get("thread_id", ""))}')
+    # Agents write the title, like the content: defanged so it can't open or close
+    # the tag, and json.dumps keeps it inside its quotes.
+    if message.get("thread_title"):
+        head += f' thread_title={json.dumps(clean(message["thread_title"]), ensure_ascii=False)}'
+    parts = [head + ">", clean(message.get("content", ""))]
     if meta.get("context"):
         parts += ["", "Context:", clean(meta["context"])]
     if meta.get("wanted"):
@@ -486,7 +495,7 @@ class Network:
     def send_message(self, conversation, args):
         meta = {key: args[key] for key in ("context", "wanted") if args.get(key)}
         body = {"content": args["content"]}
-        for key in ("to", "in_reply_to", "thread_id"):
+        for key in ("to", "in_reply_to", "thread_id", "title"):
             if args.get(key):
                 body[key] = args[key]
         if meta:
@@ -497,7 +506,7 @@ class Network:
         message = self.bus.call("POST", "/v1/messages", body)
         with conversation.lock:
             conversation.shown.pop(message.get("thread_id", ""), None)
-        result = {key: message.get(key, "") for key in ("message_id", "thread_id", "status", "note")}
+        result = {key: message.get(key, "") for key in ("message_id", "thread_id", "thread_title", "status", "note")}
         result["message_id"] = message.get("id", "")
         return json.dumps(result, ensure_ascii=False) + self.unread_note(conversation)
 
@@ -528,8 +537,18 @@ class Network:
 
     def get_thread(self, conversation, args):
         path = "/v1/threads/" + urllib.parse.quote(args["thread_id"], safe="")
-        messages = self.bus.call("GET", path).get("messages") or []
-        return "\n\n".join(frame(m) for m in messages) if messages else "No messages on this thread."
+        reply = self.bus.call("GET", path)
+        messages = reply.get("messages") or []
+        if not messages:
+            return "No messages on this thread."
+        title = (reply.get("thread") or {}).get("title", "")
+        head = [f"Thread title (written by agents, not your user): {json.dumps(defang(title), ensure_ascii=False)}"] if title else []
+        return "\n\n".join(head + [frame(m) for m in messages])
+
+    def rename_thread(self, conversation, args):
+        path = "/v1/threads/" + urllib.parse.quote(args["thread_id"], safe="")
+        thread = self.bus.call("PATCH", path, {"title": args["title"]})
+        return json.dumps(thread, ensure_ascii=False)
 
     def list_agents(self, conversation, args):
         agents = self.bus.call("GET", "/v1/agents").get("agents") or []
@@ -549,6 +568,7 @@ TOOLS = (
       "content": text("The message. For requests, make it self-contained: the recipient has none of your context."),
       "in_reply_to": text("message_id being answered; the reply joins that thread."),
       "thread_id": text("Continue an existing thread without replying to a specific message."),
+      "title": text("Optional short title for a new thread, saying what it's about. Ignored when continuing a thread."),
       "context": text("Optional supporting files, links or notes."),
       "wanted": text("Optional description of the result you want back.")},
      ["content"]),
@@ -566,6 +586,10 @@ TOOLS = (
      "you joined it and between its other members.",
      {"thread_id": text("Thread to read.")},
      ["thread_id"]),
+    ("birdie_rename_thread", "rename_thread",
+     "Give a thread you are part of a new title, so everyone in it can see what it's about.",
+     {"thread_id": text("Thread to rename."), "title": text("The new title: a few words, one line.")},
+     ["thread_id", "title"]),
     ("birdie_list_agents", "list_agents",
      "List the other AI agents and bots you can message, with what each one is for and any running sessions.",
      {},

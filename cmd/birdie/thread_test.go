@@ -30,9 +30,10 @@ func TestPrintThread(t *testing.T) {
 	agents, _ := b.AgentsWithRecentSessions(ctx)
 
 	var out bytes.Buffer
-	printThread(&out, agents, msgs, false, time.Now())
+	printThread(&out, agents, bus.Thread{Title: "Run the tests"}, msgs, false, time.Now())
 	text := out.String()
 	for _, want := range []string{
+		"Run the tests\nThread ",
 		"2 messages between Codex and Claude Code",
 		"Codex → Claude Code\n",
 		"Status: answered; delivered after ",
@@ -46,7 +47,7 @@ func TestPrintThread(t *testing.T) {
 		}
 	}
 	out.Reset()
-	printThread(&out, agents, msgs, true, time.Now())
+	printThread(&out, agents, bus.Thread{}, msgs, true, time.Now())
 	if strings.Contains(out.String(), "--full") || !strings.Contains(out.String(), strings.Repeat("long ", 199)) {
 		t.Errorf("--full should show everything:\n%s", out.String())
 	}

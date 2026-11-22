@@ -21,7 +21,8 @@ export class ApiFailure extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+/** quiet401 leaves a 401 to the caller instead of showing the sign-in page. */
+async function request<T>(method: string, path: string, body?: unknown, opts: { quiet401?: boolean } = {}): Promise<T> {
   let res: Response;
   try {
     res = await fetch(API + path, {
@@ -59,7 +60,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   connection.apiReached();
 
   if (res.status === 401) {
-    connection.signedOut();
+    if (!opts.quiet401) connection.signedOut();
     throw new ApiFailure(401, 'Sign in again with birdie ui');
   }
   if (!res.ok) {
@@ -83,8 +84,11 @@ export const api = {
   threads: (limit = 30) => request<ThreadList>('GET', '/threads?limit=' + limit),
   thread: (id: string) => request<Thread>('GET', '/threads/' + encodeURIComponent(id)),
   send: (input: SendInput) => request<SendResult>('POST', '/messages', input),
+  renameThread: (id: string, title: string) => request<{ id: string; title: string }>('PATCH', '/threads/' + encodeURIComponent(id), { title }),
   tools: () => request<ToolList>('GET', '/tools'),
-  login: (code: string) => request<void>('POST', '/login', { code }),
+  login: (code: string) => request<void>('POST', '/login', { code }, { quiet401: true }),
   me: () => request<unknown>('GET', '/me'),
+  /** Whether you're signed in, without showing the sign-in page if not. */
+  checkSignedIn: () => request<unknown>('GET', '/me', undefined, { quiet401: true }),
   logout: () => request<void>('POST', '/logout'),
 };

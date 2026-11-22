@@ -221,11 +221,20 @@ func (s *server) threads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	l := s.currentLabels(r)
+	ids := make([]string, len(list))
+	for i, t := range list {
+		ids[i] = t.ID
+	}
+	titles, err := s.Store.ThreadTitles(r.Context(), ids)
+	if err != nil {
+		s.internal(w, err)
+		return
+	}
 	out := make([]map[string]any, len(list))
 	for i, t := range list {
 		last := l.track(t.Last)
 		out[i] = map[string]any{
-			"id": t.ID, "participants": t.Participants, "count": t.Count, "last_at": t.Last.CreatedAt,
+			"id": t.ID, "title": titles[t.ID], "participants": t.Participants, "count": t.Count, "last_at": t.Last.CreatedAt,
 			"last_from": last.FromLabel, "last_text": t.Last.Content, "status": t.Last.Status, "problem": t.Problem,
 		}
 	}
@@ -265,7 +274,41 @@ func (s *server) thread(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "messages": s.currentLabels(r).tracks(msgs)})
+	l := s.currentLabels(r)
+	out := map[string]any{"id": id, "messages": l.tracks(msgs)}
+	if t, err := s.Store.GetThread(ctx, id); err == nil {
+		out["title"], out["created_by"], out["created_at"] = t.Title, l.of(t.CreatedBy, ""), t.CreatedAt
+		if t.RenamedBy != "" {
+			out["renamed_by"], out["renamed_at"] = l.of(t.RenamedBy, ""), t.RenamedAt
+		}
+	} else if !errors.Is(err, bus.ErrNotFound) {
+		s.internal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// renameThread gives a thread a new title, as the web app's own agent, so only
+// threads you're in.
+func (s *server) renameThread(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil {
+		s.fail(w, http.StatusBadRequest, "the request isn't valid JSON")
+		return
+	}
+	t, err := s.Bus.RenameThread(r.Context(), r.PathValue("id"), Me, in.Title)
+	switch {
+	case errors.Is(err, bus.ErrInvalid):
+		s.fail(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, bus.ErrNotFound):
+		s.fail(w, http.StatusNotFound, "you can only rename threads you're in")
+	case err != nil:
+		s.internal(w, err)
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"id": t.ID, "title": t.Title})
+	}
 }
 
 func (s *server) send(w http.ResponseWriter, r *http.Request) {
@@ -276,6 +319,7 @@ func (s *server) send(w http.ResponseWriter, r *http.Request) {
 		Content   string `json:"content"`
 		ThreadID  string `json:"thread_id"`
 		InReplyTo string `json:"in_reply_to"`
+		Title     string `json:"title"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, bus.MaxContentBytes+4096)).Decode(&in); err != nil {
 		s.fail(w, http.StatusBadRequest, "the request isn't valid JSON")
@@ -286,7 +330,7 @@ func (s *server) send(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusConflict, "the "+Me+" agent doesn't exist yet; run birdie ui once to set it up")
 		return
 	}
-	m, err := s.Bus.Send(ctx, Me, bus.SendInput{To: in.To, Content: in.Content, ThreadID: in.ThreadID, InReplyTo: in.InReplyTo})
+	m, err := s.Bus.Send(ctx, Me, bus.SendInput{To: in.To, Content: in.Content, ThreadID: in.ThreadID, InReplyTo: in.InReplyTo, Title: in.Title})
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
@@ -363,6 +407,8 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 			var data any
 			if e.Kind == "session" {
 				data = map[string]any{"kind": "session", "type": e.Type, "agent": e.Agent, "id": e.Session, "name": e.Name, "state": e.State, "at": e.At}
+			} else if e.Kind == "thread" {
+				data = map[string]any{"kind": "thread", "type": e.Type, "thread_id": e.ThreadID, "by": e.From, "by_label": l.of(e.From, ""), "title": e.Text, "at": e.At}
 			} else {
 				data = map[string]any{
 					"kind": "message", "type": e.Type, "id": e.ID, "thread_id": e.ThreadID, "in_reply_to": e.InReplyTo,

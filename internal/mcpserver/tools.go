@@ -30,6 +30,7 @@ var tools = []schema{
 			"content":     str("The message. For requests, make it self-contained: the recipient has none of your context."),
 			"in_reply_to": str("message_id being answered; the reply joins that thread."),
 			"thread_id":   str("Continue an existing thread without replying to a specific message."),
+			"title":       str("Optional short title for a new thread, saying what it's about. Ignored when continuing a thread; without it, the thread is named after your message."),
 			"context":     str("Optional supporting files, links or notes."),
 			"wanted":      str("Optional description of the result you want back."),
 		}),
@@ -55,6 +56,14 @@ var tools = []schema{
 		"inputSchema": obj([]string{"thread_id"}, schema{"thread_id": str("Thread to read.")}),
 	},
 	{
+		"name":        "rename_thread",
+		"description": "Give a thread you are part of a new title, so everyone in it can see what it's about.",
+		"inputSchema": obj([]string{"thread_id", "title"}, schema{
+			"thread_id": str("Thread to rename."),
+			"title":     str("The new title: a few words, one line."),
+		}),
+	},
+	{
 		"name":        "list_agents",
 		"description": "List the other AI agents and bots you can message, with what each one is for and any running sessions. A session's state, when shown, is busy, idle, or waiting (stopped until its user answers).",
 		"inputSchema": obj(nil, schema{}),
@@ -72,6 +81,7 @@ type toolArgs struct {
 	Content        string  `json:"content"`
 	InReplyTo      string  `json:"in_reply_to"`
 	ThreadID       string  `json:"thread_id"`
+	Title          string  `json:"title"`
 	Context        string  `json:"context"`
 	Wanted         string  `json:"wanted"`
 	WaitSeconds    float64 `json:"wait_seconds"`
@@ -110,14 +120,14 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (any, *rpcEr
 			meta["wanted"] = a.Wanted
 		}
 		var m bus.Message
-		m, err = s.c.Send(ctx, bus.SendInput{To: a.To, Content: a.Content, InReplyTo: a.InReplyTo, ThreadID: a.ThreadID, Meta: meta})
+		m, err = s.c.Send(ctx, bus.SendInput{To: a.To, Content: a.Content, InReplyTo: a.InReplyTo, ThreadID: a.ThreadID, Title: a.Title, Meta: meta})
 		if err == nil {
 			// A later wait_for_reply is for the answer to this, not what came before.
 			s.waitMu.Lock()
 			delete(s.shown, m.ThreadID)
 			s.waitMu.Unlock()
 		}
-		out = map[string]string{"message_id": m.ID, "thread_id": m.ThreadID, "status": m.Status, "note": m.Note}
+		out = map[string]string{"message_id": m.ID, "thread_id": m.ThreadID, "thread_title": m.ThreadTitle, "status": m.Status, "note": m.Note}
 	case "check_inbox":
 		if s.pushing() {
 			return toolText("New messages come to you on their own in this session, so there is nothing to fetch.", false), nil
@@ -145,9 +155,14 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (any, *rpcEr
 		}
 		out = map[string]any{"messages": msgs}
 	case "get_thread":
+		var t bus.Thread
 		var msgs []bus.Message
-		msgs, err = s.c.Thread(ctx, a.ThreadID)
-		out = map[string]any{"messages": msgs}
+		t, msgs, err = s.c.Thread(ctx, a.ThreadID)
+		out = map[string]any{"thread": t, "messages": msgs}
+	case "rename_thread":
+		var t bus.Thread
+		t, err = s.c.RenameThread(ctx, a.ThreadID, a.Title)
+		out = t
 	case "list_agents":
 		var agents []bus.Agent
 		agents, err = s.c.Agents(ctx)

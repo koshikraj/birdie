@@ -54,6 +54,7 @@ func New(o Options) http.Handler {
 	mux.HandleFunc("POST /ui/api/messages", s.signedIn(s.send))
 	mux.HandleFunc("GET /ui/api/threads", s.signedIn(s.threads))
 	mux.HandleFunc("GET /ui/api/threads/{id}", s.signedIn(s.thread))
+	mux.HandleFunc("PATCH /ui/api/threads/{id}", s.signedIn(s.renameThread))
 	mux.HandleFunc("GET /ui/api/tools", s.signedIn(s.tools))
 	mux.HandleFunc("GET /ui/api/events", s.signedIn(s.events))
 	mux.HandleFunc("GET /ui/api/", func(w http.ResponseWriter, r *http.Request) { s.fail(w, http.StatusNotFound, "no such API") })
@@ -73,6 +74,13 @@ func (s *server) guard(next http.Handler) http.Handler {
 			s.fail(w, http.StatusForbidden, "the web app only answers on 127.0.0.1 or localhost")
 			return
 		}
+		// Browsers keep cookies per host name, and birdie ui signs you in on
+		// 127.0.0.1, so pages asked for on localhost move there; otherwise
+		// localhost would ask you to sign in again.
+		if to, ok := onLoopbackIP(r); ok {
+			http.Redirect(w, r, to, http.StatusTemporaryRedirect)
+			return
+		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			if origin := r.Header.Get("Origin"); origin != "http://"+r.Host && origin != "https://"+r.Host {
 				s.fail(w, http.StatusForbidden, "request from another site refused")
@@ -81,6 +89,26 @@ func (s *server) guard(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// onLoopbackIP is where a page asked for on localhost lives on 127.0.0.1. The
+// API isn't moved: the app only calls it from the page's own host.
+func onLoopbackIP(r *http.Request) (string, bool) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead || strings.HasPrefix(r.URL.Path, "/ui/api/") {
+		return "", false
+	}
+	host, port, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host, port = r.Host, ""
+	}
+	if !strings.EqualFold(host, "localhost") {
+		return "", false
+	}
+	to := "127.0.0.1"
+	if port != "" {
+		to = net.JoinHostPort(to, port)
+	}
+	return "http://" + to + r.URL.RequestURI(), true
 }
 
 func loopbackHost(hostport string) bool {

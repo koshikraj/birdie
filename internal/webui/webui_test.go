@@ -332,3 +332,81 @@ func TestSendKeepsTheConversationInItsThread(t *testing.T) {
 	send(`{"to":"bob","content":"x","thread_id":"`+other.ThreadID+`"}`, http.StatusForbidden)
 	send(`{"to":"bob","content":"x","in_reply_to":"`+other.ID+`"}`, http.StatusForbidden)
 }
+
+func TestThreadTitlesInTheWebApp(t *testing.T) {
+	r := newRig(t)
+	r.signIn()
+	ctx := context.Background()
+	resp := r.do("POST", "/ui/api/messages", `{"to":"bob","content":"Plan the release\nsteps follow"}`, nil)
+	var sent struct {
+		ThreadID string `json:"thread_id"`
+	}
+	decode(t, resp, &sent)
+
+	var list struct{ Threads []struct{ ID, Title string } }
+	decode(t, r.do("GET", "/ui/api/threads", "", nil), &list)
+	if len(list.Threads) != 1 || list.Threads[0].Title != "Plan the release" {
+		t.Fatalf("threads = %+v", list.Threads)
+	}
+
+	if resp := r.do("PATCH", "/ui/api/threads/"+sent.ThreadID, `{"title":"v0.6.0 release"}`, map[string]string{"Origin": ""}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("rename with no origin: %s", resp.Status)
+	}
+	if resp := r.do("PATCH", "/ui/api/threads/"+sent.ThreadID, `{"title":"   "}`, nil); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty title: %s", resp.Status)
+	}
+	if resp := r.do("PATCH", "/ui/api/threads/"+sent.ThreadID, `{"title":"v0.6.0 release"}`, nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("rename: %s", resp.Status)
+	}
+	var th struct {
+		Title     string
+		RenamedBy string `json:"renamed_by"`
+	}
+	decode(t, r.do("GET", "/ui/api/threads/"+sent.ThreadID, "", nil), &th)
+	if th.Title != "v0.6.0 release" || th.RenamedBy == "" {
+		t.Fatalf("thread = %+v", th)
+	}
+
+	// Not a thread the web app is in.
+	if err := r.st.CreateAgent(ctx, bus.Agent{Name: "carol", TokenHash: "carol", Delivery: bus.DeliveryPull, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	other, err := r.b.Send(ctx, "bob", bus.SendInput{To: "carol", Content: "private"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := r.do("PATCH", "/ui/api/threads/"+other.ThreadID, `{"title":"mine"}`, nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("rename someone else's thread: %s", resp.Status)
+	}
+}
+
+// Pages asked for on localhost move to 127.0.0.1, where birdie ui signs you
+// in; the API and 127.0.0.1 itself stay put.
+func TestLocalhostPagesMoveTo127(t *testing.T) {
+	r := newRig(t)
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	get := func(path, host string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest("GET", r.srv.URL+path, nil)
+		req.Host = host
+		resp, err := noFollow.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	resp := get("/ui/messages?x=1", "localhost:7777")
+	if resp.StatusCode != http.StatusTemporaryRedirect || resp.Header.Get("Location") != "http://127.0.0.1:7777/ui/messages?x=1" {
+		t.Fatalf("localhost page: %s to %q", resp.Status, resp.Header.Get("Location"))
+	}
+	if resp := get("/ui/", "localhost"); resp.Header.Get("Location") != "http://127.0.0.1/ui/" {
+		t.Fatalf("localhost without a port: %s to %q", resp.Status, resp.Header.Get("Location"))
+	}
+	if resp := get("/ui/api/me", "localhost:7777"); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("API on localhost: %s, want 401 without a redirect", resp.Status)
+	}
+	if resp := get("/ui/messages", "127.0.0.1:7777"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("page on 127.0.0.1: %s", resp.Status)
+	}
+}
