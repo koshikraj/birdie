@@ -271,11 +271,14 @@ func runMCP(ctx context.Context, args []string) error {
 			*channel = false
 		}
 	}
-	srv := mcpserver.New(c, name, version, *channel, logger)
 	// In a headless turn birdie started, an agent that loads its global MCP
 	// servers starts this bridge too. That run isn't a session of this agent,
-	// so it must not show up as one and take its messages.
-	if os.Getenv(adapter.ACPAgentEnv) == "" {
+	// so it must not show up as one, take its messages or send as it. Its
+	// answer goes back on its own.
+	headless := os.Getenv(adapter.ACPAgentEnv) != ""
+	srv := mcpserver.New(c, name, version, *channel && !headless, logger)
+	srv.Inert = headless
+	if !headless {
 		srv.DetectHost = func(client string) mcpserver.Host {
 			return mcpserver.DetectHost(client, mcpserver.HostOptions{NoPush: *noPush})
 		}

@@ -336,3 +336,28 @@ func TestPullHostGetsUnreadNotice(t *testing.T) {
 	default:
 	}
 }
+
+// A bridge started inside a headless turn birdie runs offers nothing to act as
+// its agent with.
+func TestInertBridgeHasNoTools(t *testing.T) {
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	srv := mcpserver.New(client.New("http://127.0.0.1:1", "tok"), "antigravity", "test", false, log.New(io.Discard, "", 0))
+	srv.Inert = true
+	ctx, cancel := context.WithCancel(context.Background())
+	go srv.Run(ctx, inR, outW)
+	t.Cleanup(func() { inW.Close(); cancel() })
+	s := &session{t: t, in: inW, out: bufio.NewScanner(outR)}
+	init := s.call("initialize", map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "antigravity-client"}})
+	if _, ok := init["instructions"]; ok {
+		t.Error("inert bridge gave instructions")
+	}
+	if tools := s.call("tools/list", map[string]any{})["tools"].([]any); len(tools) != 0 {
+		t.Fatalf("tools = %v", tools)
+	}
+	s.id++
+	s.send(map[string]any{"jsonrpc": "2.0", "id": s.id, "method": "tools/call", "params": map[string]any{"name": "check_inbox", "arguments": map[string]any{}}})
+	if resp := s.next(); resp["error"] == nil {
+		t.Fatalf("tool call answered: %v", resp)
+	}
+}
