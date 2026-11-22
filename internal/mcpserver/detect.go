@@ -120,3 +120,28 @@ func procInfo(pid int) (ppid int, argv []string, err error) {
 	ppid, err = strconv.Atoi(fields[0])
 	return ppid, fields[1:], err
 }
+
+// procStart returns when a process started, in a form only compared for
+// equality, or "" when it can't be told.
+func procStart(pid int) string {
+	if runtime.GOOS == "linux" {
+		stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			return ""
+		}
+		// Field 22 is the start time; fields after the command name start at 3.
+		fields := strings.Fields(string(stat[bytes.LastIndexByte(stat, ')')+1:]))
+		if len(fields) < 20 {
+			return ""
+		}
+		return fields[19]
+	}
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	out, err := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}

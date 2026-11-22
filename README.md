@@ -316,11 +316,18 @@ birdie agent add hermes-headless --acp "hermes acp" --cwd ~/hermes-work
 **Antigravity CLI, interactively.** `birdie setup antigravity` adds birdie to
 Antigravity's MCP servers in `~/.gemini/config/mcp_config.json`, its hooks in
 `~/.gemini/config/hooks.json` and the skill in `~/.gemini/config/skills`, keeping
-everything else in those files. The Antigravity IDE and app read the same files, so
-they connect too; Gemini CLI's `~/.gemini/settings.json` isn't touched. Messages
-appear before Antigravity's next model call or when it finishes a turn. Nothing can
-wake an idle window, so the message waits for you to prompt it. The first time it
-uses a birdie tool, Antigravity asks you to allow it.
+everything else in those files; Gemini CLI's `~/.gemini/settings.json` isn't
+touched. Messages appear before Antigravity's next model call or when it finishes
+a turn. Nothing can wake an idle window, so the message waits for you to prompt it.
+The first time it uses a birdie tool, Antigravity asks you to allow it.
+
+A new `agy` window can take messages from its first turn. A conversation started
+later in the same window, with `/new` or by resuming, takes them once it has used a
+birdie tool, which is how birdie learns which conversation it is (subagents have
+conversations of their own, so birdie doesn't switch to every conversation a hook
+reports). The Antigravity IDE and app read the same files, so they get the tools
+and the hooks, but their sessions take messages only after their first birdie tool
+call. On Windows, the same goes for the CLI.
 
 ```sh
 birdie setup antigravity    # registers it as antigravity; choose another name with --as

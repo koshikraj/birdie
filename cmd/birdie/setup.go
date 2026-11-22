@@ -448,7 +448,7 @@ func setupGrok(r *setupRun) error {
 // files, so they connect too. Gemini CLI also keeps its files in ~/.gemini,
 // in settings.json, which this leaves alone.
 func setupAntigravity(r *setupRun) error {
-	dir := mcpserver.AntigravityDir()
+	dir := mcpserver.AntigravityDir(r.home)
 	if err := r.skill(filepath.Join(dir, "skills")); err != nil {
 		return err
 	}
@@ -463,7 +463,7 @@ func setupAntigravity(r *setupRun) error {
 	if err := r.jsonEntry(filepath.Join(dir, "mcp_config.json"), []string{"mcpServers", "birdie"}, server); err != nil {
 		return err
 	}
-	hooks := mcpserver.AntigravityHooksPath()
+	hooks := mcpserver.AntigravityHooksPath(r.home)
 	if err := r.jsonEntry(hooks, []string{"birdie"}, hook); err != nil {
 		return err
 	}

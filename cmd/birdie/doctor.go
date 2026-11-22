@@ -149,8 +149,8 @@ func runChecks(ctx context.Context, db, url, home string, svc serviceManager) []
 			add(checkFail, "%s (agent %s): %s", tool.label, agent, msg)
 			continue
 		}
-		if name == "antigravity" && !mcpserver.AntigravityHooked() {
-			add(checkWarn, "%s has no birdie hooks in %s, so its sessions only see messages when they call a birdie tool; run: birdie setup antigravity", tool.label, mcpserver.AntigravityHooksPath())
+		if name == "antigravity" && !mcpserver.AntigravityHooked(home) {
+			add(checkWarn, "%s has no working birdie hooks in %s, so its sessions only see messages when they call a birdie tool; run: birdie setup antigravity", tool.label, mcpserver.AntigravityHooksPath(home))
 		}
 		add(checkOK, "%s is connected as %s, %s", tool.label, agent, sessionCount(ctx, st, agent))
 	}
@@ -300,7 +300,7 @@ func serverAgent(tool, home, server string) (string, bool) {
 	case "claude":
 		return jsonConnected(filepath.Join(envHome("CLAUDE_CONFIG_DIR", home), ".claude.json"), server, def)
 	case "antigravity":
-		return jsonConnected(filepath.Join(mcpserver.AntigravityDir(), "mcp_config.json"), server, def)
+		return jsonConnected(filepath.Join(mcpserver.AntigravityDir(home), "mcp_config.json"), server, def)
 	case "codex":
 		return tomlConnected(filepath.Join(envHome("CODEX_HOME", filepath.Join(home, ".codex")), "config.toml"), server, def)
 	case "grok":
