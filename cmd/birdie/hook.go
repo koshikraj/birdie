@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"birdie/internal/adapter"
 	"birdie/internal/bus"
 	"birdie/internal/mcpserver"
 )
@@ -26,19 +27,42 @@ func hook(ctx context.Context, args []string) error {
 		fmt.Fprintln(os.Stderr, "birdie hook:", err)
 		return nil
 	}
-	if len(pos) != 2 || pos[0] != "grok" {
-		fmt.Fprintln(os.Stderr, "birdie hook: usage: birdie hook grok post-tool-use|stop --as NAME")
+	usage := "birdie hook: usage: birdie hook grok post-tool-use|stop --as NAME, or birdie hook antigravity pre-invocation|stop --as NAME"
+	if len(pos) != 2 {
+		fmt.Fprintln(os.Stderr, usage)
 		return nil
 	}
 	input, _ := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
-	var in grokHookInput
-	json.Unmarshal(input, &in)
-	if in.ignored(pos[1]) {
+	var session, cwd string
+	var output func(event, text string) (string, error)
+	switch pos[0] {
+	case "grok":
+		var in grokHookInput
+		json.Unmarshal(input, &in)
+		if in.ignored(pos[1]) {
+			return nil
+		}
+		session, output = in.SessionID, grokHookOutput
+	case "antigravity":
+		var in antigravityHookInput
+		json.Unmarshal(input, &in)
+		if in.ignored(pos[1]) {
+			return nil
+		}
+		session, output, cwd = in.ConversationID, antigravityHookOutput, in.Cwd
+	default:
+		fmt.Fprintln(os.Stderr, usage)
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	c.SetSession(in.SessionID)
+	if pos[0] == "antigravity" {
+		// The bridge in this agy learns the conversation from here.
+		if err := mcpserver.NoteAntigravityConversation(ctx, c, session, cwd); err != nil {
+			fmt.Fprintln(os.Stderr, "birdie hook:", err)
+		}
+	}
+	c.SetSession(session)
 	msgs, err := c.Inbox(ctx, "", 0)
 	if err != nil || len(msgs) == 0 {
 		return nil
@@ -47,7 +71,7 @@ func hook(ctx context.Context, args []string) error {
 	for i, m := range msgs {
 		text[i] = mcpserver.MessageText(m)
 	}
-	out, err := grokHookOutput(pos[1], strings.Join(text, "\n\n"))
+	out, err := output(pos[1], strings.Join(text, "\n\n"))
 	if err == nil {
 		_, err = fmt.Println(out)
 	}
@@ -82,6 +106,40 @@ func grokHookOutput(event, text string) (string, error) {
 		v = map[string]any{"hookSpecificOutput": map[string]string{"hookEventName": "PostToolUse", "additionalContext": text}}
 	case "stop":
 		v = map[string]string{"decision": "block", "reason": text}
+	default:
+		return "", errors.New("unknown hook event " + event)
+	}
+	b, err := json.Marshal(v)
+	return string(b), err
+}
+
+type antigravityHookInput struct {
+	ConversationID    string `json:"conversationId"`
+	TerminationReason string `json:"terminationReason"`
+	Cwd               string `json:"cwd"`
+}
+
+// ignored skips what can't take a message: a turn that stopped because the
+// user cancelled it or it failed, and the headless runs birdie starts itself,
+// whose answer already goes back on its own. Those load the same global hooks,
+// and must not take messages meant for the user's own sessions.
+func (in antigravityHookInput) ignored(event string) bool {
+	if in.ConversationID == "" || os.Getenv(adapter.ACPAgentEnv) != "" {
+		return true
+	}
+	return event == "stop" && in.TerminationReason != "" && in.TerminationReason != "NO_TOOL_CALL"
+}
+
+// antigravityHookOutput puts text in front of the model. A Stop hook that
+// answers "continue" goes on with its reason as a system message, and a
+// PreInvocation hook adds a system message before the model is called.
+func antigravityHookOutput(event, text string) (string, error) {
+	var v any
+	switch event {
+	case "pre-invocation":
+		v = map[string]any{"injectSteps": []any{map[string]any{"systemMessage": map[string]string{"systemMessage": text}}}}
+	case "stop":
+		v = map[string]string{"decision": "continue", "reason": text}
 	default:
 		return "", errors.New("unknown hook event " + event)
 	}

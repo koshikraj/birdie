@@ -27,6 +27,10 @@ const (
 	acpDefaultReplies = 10
 )
 
+// ACPAgentEnv names the agent in the environment of each process the adapter
+// starts, so hooks loaded by that process know it's a headless run.
+const ACPAgentEnv = "BIRDIE_ACP_AGENT"
+
 // ACP delivers messages to agents that speak the Agent Client Protocol over
 // stdio (grok agent stdio, codex-acp, claude-code-acp, gemini --acp, ...).
 // For each message it starts the agent, loads the ACP session mapped to the
@@ -198,6 +202,7 @@ func (a *ACP) turn(ctx context.Context, to bus.Agent, m bus.Message) (text, stop
 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = cwd
+	cmd.Env = append(os.Environ(), ACPAgentEnv+"="+to.Name)
 	cmd.WaitDelay = 5 * time.Second
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
