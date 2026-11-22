@@ -4,13 +4,18 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"birdie/internal/bus"
+	"birdie/internal/client"
 )
 
 func TestMessageText(t *testing.T) {
@@ -51,9 +56,10 @@ func TestDetectHostTrustsClientNameOverInheritedEnv(t *testing.T) {
 	t.Setenv("CLAUDECODE", "1")
 	t.Setenv("GROK_SESSION_ID", "g1")
 	cases := map[string]any{
-		"codex-mcp-client": &codexHost{},
-		"grok-shell-x":     &grokHost{},
-		"claude-code":      &claudeHost{},
+		"codex-mcp-client":   &codexHost{},
+		"grok-shell-x":       &grokHost{},
+		"claude-code":        &claudeHost{},
+		"antigravity-client": &antigravityHost{},
 	}
 	for client, want := range cases {
 		got := DetectHost(client, HostOptions{})
@@ -77,6 +83,8 @@ func typeName(v any) string {
 		return "grok"
 	case *claudeHost:
 		return "claude"
+	case *antigravityHost:
+		return "antigravity"
 	}
 	return "other"
 }
@@ -195,5 +203,127 @@ func TestGrokTierNeedsHooks(t *testing.T) {
 	os.WriteFile(GrokHooksPath(), []byte("{}"), 0o600)
 	if h.Tier() != bus.TierTurn {
 		t.Fatalf("with hooks: tier = %s", h.Tier())
+	}
+}
+
+func TestAntigravitySession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	h := &antigravityHost{fallback: SessionInfo{ID: "proc-1"}}
+	h.once.Do(func() {}) // not under agy
+	if h.Tier() != bus.TierPull || h.Session().ID != "proc-1" {
+		t.Fatalf("before anything: tier %s, id %s", h.Tier(), h.Session().ID)
+	}
+	h.Observe(json.RawMessage(`{"antigravity.google/conversation_id":"sub","antigravity.google/root_conversation_id":"root","progressToken":"x"}`))
+	if h.Session().ID != "root" {
+		t.Fatalf("after a call: id %s", h.Session().ID)
+	}
+}
+
+func TestAntigravityHooked(t *testing.T) {
+	home := t.TempDir()
+	os.MkdirAll(AntigravityDir(home), 0o700)
+	for text, want := range map[string]bool{
+		`{"lint":{}}`: false, // the file is shared, so only birdie's entry counts
+		`{"lint":{},"birdie":{"Stop":[{"command":"x"}]}}`:       true,
+		`{"birdie":{"PreInvocation":[{"command":"x"}]}}`:        true,
+		`{"birdie":{"enabled":false,"Stop":[{"command":"x"}]}}`: false,
+		`{"birdie":{"enabled":true,"Stop":[{"command":"x"}]}}`:  true,
+		`{"birdie":null}`:        false,
+		`{"birdie":{"Stop":[]}}`: false,
+		`not json`:               false,
+	} {
+		os.WriteFile(AntigravityHooksPath(home), []byte(text), 0o600)
+		if got := AntigravityHooked(home); got != want {
+			t.Errorf("%s: hooked = %v", text, got)
+		}
+	}
+}
+
+// The first conversation a hook notes for an agy process is the bridge's
+// until a tool call names the root; a process that reused the pid doesn't
+// inherit it.
+func TestAntigravityHookConversation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	pid := os.Getpid()
+	writeEntry := func(conv, start string) {
+		os.MkdirAll(antigravityConversations(), 0o700)
+		os.WriteFile(filepath.Join(antigravityConversations(), fmt.Sprint(pid)), []byte(conv+"\n"+start), 0o600)
+	}
+	newHost := func() *antigravityHost {
+		h := &antigravityHost{fallback: SessionInfo{ID: "proc-1"}}
+		h.once.Do(func() {})
+		h.pid, h.start = pid, procStart(pid)
+		return h
+	}
+	writeEntry("first", procStart(pid))
+	h := newHost()
+	if h.Session().ID != "first" {
+		t.Fatalf("from the hook: id %s", h.Session().ID)
+	}
+	h.Observe(json.RawMessage(`{"antigravity.google/root_conversation_id":"root"}`))
+	if h.Session().ID != "root" {
+		t.Fatalf("after a call: id %s", h.Session().ID)
+	}
+	writeEntry("old", "another start")
+	if h := newHost(); h.Session().ID != "proc-1" {
+		t.Fatalf("a stale entry was used: id %s", h.Session().ID)
+	}
+}
+
+func TestNoteAntigravityConversation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	var reports []string
+	var fail atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail.Load() {
+			http.Error(w, `{"error":"down"}`, http.StatusServiceUnavailable)
+			return
+		}
+		reports = append(reports, r.URL.Path)
+		w.Write([]byte("{}"))
+	}))
+	defer srv.Close()
+	c := client.New(srv.URL, "tok")
+	me := os.Getpid()
+	old := findAgy
+	findAgy = func() int { return me }
+	defer func() { findAgy = old }()
+	ctx := context.Background()
+
+	// A stale file of an ended process is swept.
+	os.MkdirAll(antigravityConversations(), 0o700)
+	stale := filepath.Join(antigravityConversations(), "999999999")
+	os.WriteFile(stale, []byte("gone\nx"), 0o600)
+
+	fail.Store(true)
+	if err := NoteAntigravityConversation(ctx, c, "root", "/w/proj"); err == nil {
+		t.Fatal("a failed report should be an error")
+	}
+	if _, ok := readAgyEntry(me); ok {
+		t.Fatal("a failed report should leave nothing, so the next hook tries again")
+	}
+	fail.Store(false)
+	if err := NoteAntigravityConversation(ctx, c, "root", "/w/proj"); err != nil {
+		t.Fatal(err)
+	}
+	// A subagent's hook comes later, with its own conversation.
+	if err := NoteAntigravityConversation(ctx, c, "subagent", "/w/proj"); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := readAgyEntry(me); e.conv != "root" {
+		t.Fatalf("entry = %+v", e)
+	}
+	if len(reports) != 1 || reports[0] != "/v1/sessions/root" {
+		t.Fatalf("reports = %v", reports)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Error("stale entry not swept")
+	}
+	if files, _ := os.ReadDir(antigravityConversations()); len(files) != 1 {
+		t.Errorf("files left: %d", len(files))
 	}
 }

@@ -21,6 +21,7 @@ import (
 const (
 	itemHeadless       = "grok-headless"
 	itemHermesHeadless = "hermes-headless"
+	itemAgyHeadless    = "antigravity-headless"
 	itemBot            = "grok-bot"
 
 	botAgent = "grok-bot"
@@ -34,6 +35,7 @@ type headlessAgent struct {
 var headlessAgents = []headlessAgent{
 	{itemHeadless, "Grok CLI (headless)", "grok", "grok", "grok agent stdio", "grok-work", "Grok CLI: coding questions and quick research"},
 	{itemHermesHeadless, "Hermes (headless)", "hermes", "hermes-headless", "hermes acp", "hermes-work", "Hermes Agent: answers with nothing open"},
+	{itemAgyHeadless, "Antigravity (headless)", "antigravity", "antigravity-headless", "agy acp", "antigravity-work", "Antigravity CLI: answers with nothing open"},
 }
 
 func headlessFor(key string) (headlessAgent, bool) {
@@ -447,12 +449,11 @@ func (w *wizard) apply(plan wizardPlan) (failed []string) {
 		}
 	}
 	for _, it := range plan.disconnect {
-		switch it.key {
-		case itemHeadless, itemHermesHeadless, itemBot:
+		if _, ok := headlessFor(it.key); ok || it.key == itemBot {
 			step(it.label, func() error { return w.deleteAgent(it.agent) })
-		default:
-			step(it.label, func() error { return setupOne(w.ctx, it.key, w.toolOptions(it, plan, true), false) })
+			continue
 		}
+		step(it.label, func() error { return setupOne(w.ctx, it.key, w.toolOptions(it, plan, true), false) })
 	}
 	for _, it := range plan.connect {
 		if h, ok := headlessFor(it.key); ok {

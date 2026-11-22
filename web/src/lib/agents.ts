@@ -1,3 +1,4 @@
+import antigravityIcon from '../assets/antigravity.svg';
 import claudeIcon from '../assets/claude-code.svg';
 import codexIcon from '../assets/codex.svg';
 import grokBotIcon from '../assets/grok-bot.png';
@@ -55,6 +56,9 @@ export function identity(name: string): Identity {
   }
   if (name === 'grok-bot') {
     return { ...base, product: 'Grok Bot', tile: '#000000', glyph: 'icon', icon: grokBotIcon, full: true, spec: 'arch', color: 3, sceneIcon: 68, sceneClip: true };
+  }
+  if (name === 'antigravity' || name.startsWith('antigravity-')) {
+    return { ...base, product: 'Antigravity', tile: '#FFFFFF', glyph: 'icon', icon: antigravityIcon, full: false, spec: 'arch', color: 2, sceneIcon: 48 };
   }
   if (name === 'grok' || name === 'grok-tui') {
     return { ...base, product: 'Grok CLI', tile: '#000000', glyph: 'icon', icon: grokIcon, full: false, spec: 'arch', color: 3, sceneIcon: 44 };

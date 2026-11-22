@@ -55,9 +55,12 @@ type Server struct {
 	// DetectHost picks the Host from the MCP client's name. Without it the
 	// bridge doesn't act as a session.
 	DetectHost func(client string) Host
-	hostMu     sync.RWMutex
-	host       Host
-	beat       chan struct{}
+	// Inert offers no tools: the bridge was started inside a headless turn
+	// birdie runs for another agent, and must not act as this one.
+	Inert  bool
+	hostMu sync.RWMutex
+	host   Host
+	beat   chan struct{}
 }
 
 func New(c *client.Client, name, version string, channel bool, logger *log.Logger) *Server {
@@ -149,9 +152,17 @@ func (s *Server) handle(ctx context.Context, req request) {
 	case "ping":
 		result = struct{}{}
 	case "tools/list":
-		result = map[string]any{"tools": tools}
+		if s.Inert {
+			result = map[string]any{"tools": []any{}}
+		} else {
+			result = map[string]any{"tools": tools}
+		}
 	case "tools/call":
-		result, rerr = s.callTool(ctx, req.Params)
+		if s.Inert {
+			rerr = &rpcError{-32601, "birdie's tools aren't available in a headless turn birdie started"}
+		} else {
+			result, rerr = s.callTool(ctx, req.Params)
+		}
 	default:
 		rerr = &rpcError{-32601, "method not found: " + req.Method}
 	}
@@ -203,12 +214,15 @@ func (s *Server) initialize(params json.RawMessage) any {
 	if s.channelOn() {
 		caps["experimental"] = map[string]any{"claude/channel": map[string]any{}}
 	}
-	return map[string]any{
+	res := map[string]any{
 		"protocolVersion": version,
 		"capabilities":    caps,
 		"serverInfo":      map[string]string{"name": "birdie", "version": s.version},
-		"instructions":    s.instructions(),
 	}
+	if !s.Inert {
+		res["instructions"] = s.instructions()
+	}
+	return res
 }
 
 func (s *Server) instructions() string {

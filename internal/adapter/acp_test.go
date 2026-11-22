@@ -83,6 +83,8 @@ func fakeAgent(dir string) {
 				}
 				json.Unmarshal(in.Bytes(), &resp)
 				chunk(req.Params.SessionID, "permission: "+resp.Result.Outcome.OptionID)
+			} else if strings.Contains(text, "which-agent") {
+				chunk(req.Params.SessionID, "agent: "+os.Getenv(adapter.ACPAgentEnv))
 			} else {
 				f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 				f.WriteString("x")
@@ -186,6 +188,15 @@ func TestACPPermission(t *testing.T) {
 				t.Fatalf("reply = %q, want %q", r.Content, want)
 			}
 		})
+	}
+}
+
+// The agent's own hooks can tell they run in a headless turn birdie started.
+func TestACPNamesTheAgentInItsEnvironment(t *testing.T) {
+	b, ctx := setupACP(t, nil)
+	m, _ := b.Send(ctx, "alice", bus.SendInput{To: "grok", Content: "which-agent"})
+	if r := reply(t, b, ctx, m.ThreadID); r.Content != "agent: grok" {
+		t.Fatalf("reply = %q", r.Content)
 	}
 }
 

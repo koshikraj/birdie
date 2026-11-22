@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -32,15 +33,27 @@ type setupTool struct {
 }
 
 var setupTools = map[string]setupTool{
-	"claude": {"Claude Code", "claude", "Claude Code on this machine: code, repos, files", setupClaude},
-	"codex":  {"Codex", "codex", "Codex on this machine: code, repos, files", setupCodex},
-	"grok":   {"Grok CLI", "grok-tui", "Grok CLI on this machine: coding questions and quick research", setupGrok},
-	"hermes": {"Hermes", "hermes", "Hermes Agent on this machine", setupHermes},
+	"claude":      {"Claude Code", "claude", "Claude Code on this machine: code, repos, files", setupClaude},
+	"codex":       {"Codex", "codex", "Codex on this machine: code, repos, files", setupCodex},
+	"grok":        {"Grok CLI", "grok-tui", "Grok CLI on this machine: coding questions and quick research", setupGrok},
+	"hermes":      {"Hermes", "hermes", "Hermes Agent on this machine", setupHermes},
+	"antigravity": {"Antigravity", "antigravity", "Antigravity CLI on this machine: code, repos, files", setupAntigravity},
 }
 
-// setupOrder is the order tools are listed in. Each name is also the command
-// looked for on PATH.
-var setupOrder = []string{"claude", "codex", "grok", "hermes"}
+// setupOrder is the order tools are listed in.
+var setupOrder = []string{"claude", "codex", "grok", "hermes", "antigravity"}
+
+// toolCommands are the commands looked for on PATH where they differ from the
+// tool's name.
+var toolCommands = map[string]string{"antigravity": "agy"}
+
+// toolCommand is the command a tool is found by on PATH.
+func toolCommand(name string) string {
+	if c, ok := toolCommands[name]; ok {
+		return c
+	}
+	return name
+}
 
 // setupRun carries one setup and records what it changed.
 type setupRun struct {
@@ -78,7 +91,7 @@ func setup(ctx context.Context, args []string) error {
 		return err
 	}
 	if len(pos) > 1 || (len(pos) == 0) != *all {
-		return errors.New("usage: birdie setup claude|codex|grok|hermes|--all [--as NAME] [--remove] [--dry-run] [--wake]\n       birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]\nFor a guided setup, run: birdie onboard")
+		return errors.New("usage: birdie setup claude|codex|grok|hermes|antigravity|--all [--as NAME] [--remove] [--dry-run] [--wake]\n       birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]\nFor a guided setup, run: birdie onboard")
 	}
 	isBot := len(pos) == 1 && pos[0] == botAgent
 	if !isBot && (*webhook != "" || *authFile != "") {
@@ -114,7 +127,7 @@ func setup(ctx context.Context, args []string) error {
 		return setupBot(ctx, o, envOr("BIRDIE_URL", defaultURL), *webhook, *authFile, p, os.Stdout)
 	}
 	if _, ok := setupTools[pos[0]]; !ok {
-		return fmt.Errorf("can't set up %q; choose claude, codex, grok, hermes or %s", pos[0], botAgent)
+		return fmt.Errorf("can't set up %q; choose claude, codex, grok, hermes, antigravity or %s", pos[0], botAgent)
 	}
 	return setupOne(ctx, pos[0], o, o.dry)
 }
@@ -160,7 +173,7 @@ func setupOne(ctx context.Context, name string, o setupOptions, dry bool) error 
 		if name == "hermes" {
 			fmt.Println("done. To load it, restart Hermes with: hermes gateway restart. Keep `birdie serve` running.")
 		} else {
-			fmt.Printf("done. Restart any open %s sessions, and keep `birdie serve` running.\n", name)
+			fmt.Printf("done. Restart any open %s sessions, and keep `birdie serve` running.\n", toolCommand(name))
 		}
 	}
 	return nil
@@ -198,7 +211,7 @@ func setupAll(ctx context.Context, o setupOptions, out io.Writer) error {
 // detectTools splits the known tools into those on PATH and those not.
 func detectTools() (found, missing []string) {
 	for _, name := range setupOrder {
-		if _, err := exec.LookPath(name); err == nil {
+		if _, err := exec.LookPath(toolCommand(name)); err == nil {
 			found = append(found, name)
 		} else {
 			missing = append(missing, name)
@@ -255,6 +268,9 @@ func (r *setupRun) backup(path string) error {
 		return err
 	}
 	dest := filepath.Join(dir, strings.TrimLeft(strings.ReplaceAll(strings.TrimPrefix(path, r.home), string(filepath.Separator), "_"), "_"))
+	if _, err := os.Stat(dest); err == nil {
+		return nil // one run may change a file twice; keep the copy from before the first
+	}
 	if err := os.WriteFile(dest, b, 0o600); err != nil {
 		return err
 	}
@@ -430,6 +446,144 @@ func setupGrok(r *setupRun) error {
 		return err
 	}
 	return r.write(path, content)
+}
+
+// setupAntigravity connects the Antigravity CLI. Its IDE and app read the same
+// files, so they connect too. Gemini CLI also keeps its files in ~/.gemini,
+// in settings.json, which this leaves alone.
+func setupAntigravity(r *setupRun) error {
+	dir := mcpserver.AntigravityDir(r.home)
+	if err := r.skill(filepath.Join(dir, "skills")); err != nil {
+		return err
+	}
+	var server, hook any
+	if !r.remove {
+		server = map[string]any{"command": r.exe, "args": []string{"mcp", "--as", r.agent}}
+		hook = antigravityHooks(r.exe, r.agent)
+	}
+	if err := r.jsonEntry(filepath.Join(dir, "mcp_config.json"), []string{"mcpServers", legacyServer}, nil); err != nil {
+		return err
+	}
+	if err := r.jsonEntry(filepath.Join(dir, "mcp_config.json"), []string{"mcpServers", "birdie"}, server); err != nil {
+		return err
+	}
+	hooks := mcpserver.AntigravityHooksPath(r.home)
+	if r.remove && onlyKey(hooks, "birdie") {
+		return r.removeFile(hooks) // nothing else in it, so it was setup's own
+	}
+	return r.jsonEntry(hooks, []string{"birdie"}, hook)
+}
+
+// onlyKey says whether a JSON file holds an object whose one key is key.
+func onlyKey(path, key string) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(b, &obj) != nil {
+		return false
+	}
+	_, ok := obj[key]
+	return ok && len(obj) == 1
+}
+
+// antigravityHooks is birdie's entry in Antigravity's hooks.json: waiting
+// messages go in before each model call, and when a turn ends.
+func antigravityHooks(exe, agent string) map[string]any {
+	handler := func(event string) []any {
+		return []any{map[string]any{
+			"type":    "command",
+			"command": fmt.Sprintf("%s hook antigravity %s --as %s", hookQuote(exe), event, hookQuote(agent)),
+			"timeout": 15,
+		}}
+	}
+	return map[string]any{"PreInvocation": handler("pre-invocation"), "Stop": handler("stop")}
+}
+
+// hookQuote quotes an argument for the shell Antigravity runs hooks with:
+// sh -c, or cmd /c on Windows, where only double quotes group.
+func hookQuote(s string) string {
+	if runtime.GOOS == "windows" {
+		return `"` + strings.ReplaceAll(s, `"`, "") + `"`
+	}
+	return shellQuote(s)
+}
+
+// jsonEntry sets the value at key, a path of object keys, in a JSON file,
+// keeping everything else in it. A nil value removes it, and an object left
+// empty by that goes too. An empty file counts as an empty object.
+func (r *setupRun) jsonEntry(path string, key []string, value any) error {
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if value == nil && len(b) == 0 {
+		return nil
+	}
+	root := map[string]any{}
+	if len(strings.TrimSpace(string(b))) > 0 {
+		if err := json.Unmarshal(b, &root); err != nil {
+			return fmt.Errorf("can't read %s as JSON: %w", path, err)
+		}
+		if root == nil {
+			root = map[string]any{}
+		}
+	}
+	changed, err := setJSONPath(root, key, value)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if !changed {
+		return nil
+	}
+	out := ""
+	if len(root) > 0 || strings.TrimSpace(string(b)) != "" {
+		enc, err := json.MarshalIndent(root, "", "  ")
+		if err != nil {
+			return err
+		}
+		out = string(enc) + "\n"
+	}
+	return r.write(path, out)
+}
+
+// setJSONPath sets or, for a nil value, deletes obj[key...], and says whether
+// anything changed. It won't replace something that isn't an object on the
+// way, which would lose what the user had there.
+func setJSONPath(obj map[string]any, key []string, value any) (bool, error) {
+	if len(key) == 1 {
+		old, had := obj[key[0]]
+		if value == nil {
+			delete(obj, key[0])
+			return had, nil
+		}
+		// Compare as JSON, which is how the file holds it.
+		a, _ := json.Marshal(old)
+		b, _ := json.Marshal(value)
+		if had && string(a) == string(b) {
+			return false, nil
+		}
+		obj[key[0]] = value
+		return true, nil
+	}
+	next, had := obj[key[0]]
+	child, ok := next.(map[string]any)
+	switch {
+	case ok:
+	case had && next != nil:
+		return false, fmt.Errorf("%s isn't a JSON object, so birdie won't change it", key[0])
+	case value == nil:
+		return false, nil
+	default:
+		child = map[string]any{}
+		obj[key[0]] = child
+	}
+	changed, err := setJSONPath(child, key[1:], value)
+	if value == nil && len(child) == 0 {
+		delete(obj, key[0])
+	}
+	return changed, err
 }
 
 // hermesHome is the Hermes profile setup applies to.
