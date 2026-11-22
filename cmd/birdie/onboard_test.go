@@ -696,6 +696,47 @@ func TestOnboardHeadlessGrok(t *testing.T) {
 	}
 }
 
+func TestOnboardAntigravity(t *testing.T) {
+	o := fakeTools(t, "agy")
+	p := &fakePrompter{toggle: []string{itemAgyHeadless}, lines: []string{"~/agy"}, confirms: []bool{true}}
+	out, err := runWizard(t, o, p, noSvc())
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var keys []string
+	for _, it := range p.shown {
+		keys = append(keys, it.key)
+	}
+	if !strings.Contains(strings.Join(keys, " "), "antigravity "+itemAgyHeadless) {
+		t.Fatalf("items = %v", keys)
+	}
+	if a, ok := connectedAs("antigravity", o.home); !ok || a != "antigravity" {
+		t.Fatalf("connectedAs = %q, %v\n%s", a, ok, out)
+	}
+	st, _ := store.Open(o.db)
+	defer st.Close()
+	a, err := st.GetAgent(context.Background(), "antigravity-headless")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Delivery != "acp" || a.Config["command"] != "agy acp" || a.Config["cwd"] != filepath.Join(o.home, "agy") || a.Config["permission"] != "reject" {
+		t.Errorf("agent config = %+v", a.Config)
+	}
+	if strings.Contains(a.Config["command"], "dangerously") {
+		t.Error("headless Antigravity must not skip permissions")
+	}
+
+	// Unticking the headless row deletes its agent.
+	o.stamp = "t2"
+	p = &fakePrompter{toggle: []string{itemAgyHeadless}, confirms: []bool{true}}
+	if out, err := runWizard(t, o, p, noSvc()); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if _, err := st.GetAgent(context.Background(), "antigravity-headless"); err == nil {
+		t.Error("headless agent still there")
+	}
+}
+
 func TestOnboardService(t *testing.T) {
 	for name, c := range map[string]struct {
 		svc      fakeService
