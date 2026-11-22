@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"birdie/internal/bus"
+	"birdie/internal/client"
 )
 
 // SessionInfo describes the conversation a bridge serves right now.
@@ -56,6 +58,8 @@ func DetectHost(client string, opts HostOptions) Host {
 		return &codexHost{noPush: opts.NoPush, fallback: procSession()}
 	case strings.Contains(name, "grok"):
 		return &grokHost{fallback: procSession()}
+	case strings.Contains(name, "antigravity"):
+		return &antigravityHost{fallback: procSession()}
 	case strings.Contains(name, "claude"):
 		return &claudeHost{noPush: opts.NoPush, fallback: procSession()}
 	case os.Getenv("GROK_SESSION_ID") != "":
@@ -338,4 +342,151 @@ func (h *grokHost) Tier() string {
 func (h *grokHost) Observe(json.RawMessage) {}
 func (h *grokHost) Push(context.Context, bus.Message) error {
 	return errors.New("grok sessions get messages through hooks")
+}
+
+// AntigravityDir is Antigravity's global customization folder. The CLI, the
+// IDE and the app all read its mcp_config.json, hooks.json and skills.
+func AntigravityDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".gemini", "config")
+}
+
+// AntigravityHooksPath is the hooks file `birdie setup antigravity` adds to.
+func AntigravityHooksPath() string { return filepath.Join(AntigravityDir(), "hooks.json") }
+
+// AntigravityHooked says whether the hooks file has birdie's entry. The file
+// is shared with other hooks, so being there isn't enough.
+func AntigravityHooked() bool {
+	b, err := os.ReadFile(AntigravityHooksPath())
+	if err != nil {
+		return false
+	}
+	var hooks map[string]json.RawMessage
+	if json.Unmarshal(b, &hooks) != nil {
+		return false
+	}
+	_, ok := hooks["birdie"]
+	return ok
+}
+
+// antigravityConversations is where birdie's hooks note the conversation
+// each running agy process is in, one file per process. Antigravity tells
+// hooks the conversation, but tells MCP servers only once a tool is called.
+func antigravityConversations() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		dir = "."
+	}
+	return filepath.Join(dir, "birdie", "antigravity")
+}
+
+// NoteAntigravityConversation is called from a hook: it notes the
+// conversation for the agy process the hook runs under, so that process's
+// bridge acts for the same session. A conversation it hasn't seen yet is
+// reported to the bus right away, so this turn can already take messages;
+// the bridge takes the session over at its next beat.
+func NoteAntigravityConversation(ctx context.Context, c *client.Client, id, cwd string) error {
+	pid := agyAncestor()
+	if pid == 0 || id == "" {
+		return errors.New("not running under agy")
+	}
+	path := filepath.Join(antigravityConversations(), fmt.Sprint(pid))
+	if b, err := os.ReadFile(path); err == nil && string(b) == id {
+		return os.Chtimes(path, time.Now(), time.Now())
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(id), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return c.ReportSession(ctx, id, bus.SessionInput{Name: slug(filepath.Base(cwd)), Cwd: cwd, Branch: gitBranch(cwd), Tier: bus.TierTurn})
+}
+
+func agyAncestor() int {
+	pid := os.Getppid()
+	for depth := 0; depth < 8 && pid > 1; depth++ {
+		ppid, argv, err := procInfo(pid)
+		if err != nil {
+			return 0
+		}
+		if len(argv) > 0 && strings.TrimSuffix(filepath.Base(argv[0]), ".exe") == "agy" {
+			return pid
+		}
+		pid = ppid
+	}
+	return 0
+}
+
+// antigravityHost is the Antigravity CLI. A tool call's _meta names the
+// conversation, and so do birdie's hooks, through the file they leave for this
+// process. With the hooks from `birdie setup antigravity`, the session sees
+// messages before its next model call or when it finishes a turn. Nothing
+// wakes an idle session.
+type antigravityHost struct {
+	fallback SessionInfo
+
+	once sync.Once
+	pid  int
+
+	mu     sync.Mutex
+	conv   string
+	seenAt time.Time
+}
+
+func (h *antigravityHost) current() string {
+	h.once.Do(func() { h.pid = agyAncestor() })
+	h.mu.Lock()
+	conv, seenAt := h.conv, h.seenAt
+	h.mu.Unlock()
+	if h.pid != 0 {
+		path := filepath.Join(antigravityConversations(), fmt.Sprint(h.pid))
+		// Whichever is newer wins: the user may have started another
+		// conversation in the same agy since the last tool call.
+		if fi, err := os.Stat(path); err == nil && (conv == "" || fi.ModTime().After(seenAt)) {
+			if b, err := os.ReadFile(path); err == nil && len(b) > 0 {
+				return strings.TrimSpace(string(b))
+			}
+		}
+	}
+	return conv
+}
+
+func (h *antigravityHost) Session() SessionInfo {
+	info := h.fallback
+	if c := h.current(); c != "" {
+		info.ID = c
+	}
+	return info
+}
+
+func (h *antigravityHost) Tier() string {
+	if AntigravityHooked() {
+		return bus.TierTurn
+	}
+	return bus.TierPull
+}
+
+func (h *antigravityHost) Observe(meta json.RawMessage) {
+	var m struct {
+		Root string `json:"antigravity.google/root_conversation_id"`
+		Conv string `json:"antigravity.google/conversation_id"`
+	}
+	if json.Unmarshal(meta, &m) != nil {
+		return
+	}
+	// A subagent has its own conversation; its root is the one the user sees.
+	if id := cmp.Or(m.Root, m.Conv); id != "" {
+		h.mu.Lock()
+		h.conv, h.seenAt = id, time.Now()
+		h.mu.Unlock()
+	}
+}
+
+func (h *antigravityHost) Push(context.Context, bus.Message) error {
+	return errors.New("antigravity sessions get messages through hooks")
 }

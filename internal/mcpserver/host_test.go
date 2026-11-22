@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"birdie/internal/bus"
 )
@@ -51,9 +52,10 @@ func TestDetectHostTrustsClientNameOverInheritedEnv(t *testing.T) {
 	t.Setenv("CLAUDECODE", "1")
 	t.Setenv("GROK_SESSION_ID", "g1")
 	cases := map[string]any{
-		"codex-mcp-client": &codexHost{},
-		"grok-shell-x":     &grokHost{},
-		"claude-code":      &claudeHost{},
+		"codex-mcp-client":   &codexHost{},
+		"grok-shell-x":       &grokHost{},
+		"claude-code":        &claudeHost{},
+		"antigravity-client": &antigravityHost{},
 	}
 	for client, want := range cases {
 		got := DetectHost(client, HostOptions{})
@@ -77,6 +79,8 @@ func typeName(v any) string {
 		return "grok"
 	case *claudeHost:
 		return "claude"
+	case *antigravityHost:
+		return "antigravity"
 	}
 	return "other"
 }
@@ -195,5 +199,42 @@ func TestGrokTierNeedsHooks(t *testing.T) {
 	os.WriteFile(GrokHooksPath(), []byte("{}"), 0o600)
 	if h.Tier() != bus.TierTurn {
 		t.Fatalf("with hooks: tier = %s", h.Tier())
+	}
+}
+
+func TestAntigravitySession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	h := &antigravityHost{fallback: SessionInfo{ID: "proc-1"}}
+	if h.Tier() != bus.TierPull || h.Session().ID != "proc-1" {
+		t.Fatalf("before anything: tier %s, id %s", h.Tier(), h.Session().ID)
+	}
+	h.Observe(json.RawMessage(`{"antigravity.google/conversation_id":"sub","antigravity.google/root_conversation_id":"root","progressToken":"x"}`))
+	if h.Session().ID != "root" {
+		t.Fatalf("after a call: id %s", h.Session().ID)
+	}
+
+	// The hooks file is shared, so only birdie's entry counts.
+	os.MkdirAll(AntigravityDir(), 0o700)
+	os.WriteFile(AntigravityHooksPath(), []byte(`{"lint":{}}`), 0o600)
+	if h.Tier() != bus.TierPull {
+		t.Fatal("another tool's hooks moved the tier")
+	}
+	os.WriteFile(AntigravityHooksPath(), []byte(`{"lint":{},"birdie":{"Stop":[]}}`), 0o600)
+	if h.Tier() != bus.TierTurn {
+		t.Fatalf("with hooks: tier = %s", h.Tier())
+	}
+
+	// A hook names a newer conversation for this agy process.
+	h.once.Do(func() {})
+	h.pid = 4242
+	path := filepath.Join(antigravityConversations(), "4242")
+	os.MkdirAll(filepath.Dir(path), 0o700)
+	os.WriteFile(path, []byte("from-hook"), 0o600)
+	future := time.Now().Add(time.Minute)
+	os.Chtimes(path, future, future)
+	if h.Session().ID != "from-hook" {
+		t.Fatalf("after a hook: id %s", h.Session().ID)
 	}
 }
