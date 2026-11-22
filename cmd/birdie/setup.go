@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -267,6 +268,9 @@ func (r *setupRun) backup(path string) error {
 		return err
 	}
 	dest := filepath.Join(dir, strings.TrimLeft(strings.ReplaceAll(strings.TrimPrefix(path, r.home), string(filepath.Separator), "_"), "_"))
+	if _, err := os.Stat(dest); err == nil {
+		return nil // one run may change a file twice; keep the copy from before the first
+	}
 	if err := os.WriteFile(dest, b, 0o600); err != nil {
 		return err
 	}
@@ -464,14 +468,24 @@ func setupAntigravity(r *setupRun) error {
 		return err
 	}
 	hooks := mcpserver.AntigravityHooksPath(r.home)
-	if err := r.jsonEntry(hooks, []string{"birdie"}, hook); err != nil {
-		return err
+	if r.remove && onlyKey(hooks, "birdie") {
+		return r.removeFile(hooks) // nothing else in it, so it was setup's own
 	}
-	// A hooks file left with nothing in it was most likely setup's own.
-	if b, err := os.ReadFile(hooks); r.remove && err == nil && strings.TrimSpace(string(b)) == "{}" {
-		return r.removeFile(hooks)
+	return r.jsonEntry(hooks, []string{"birdie"}, hook)
+}
+
+// onlyKey says whether a JSON file holds an object whose one key is key.
+func onlyKey(path, key string) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
 	}
-	return nil
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(b, &obj) != nil {
+		return false
+	}
+	_, ok := obj[key]
+	return ok && len(obj) == 1
 }
 
 // antigravityHooks is birdie's entry in Antigravity's hooks.json: waiting
@@ -480,11 +494,20 @@ func antigravityHooks(exe, agent string) map[string]any {
 	handler := func(event string) []any {
 		return []any{map[string]any{
 			"type":    "command",
-			"command": fmt.Sprintf("%s hook antigravity %s --as %s", shellQuote(exe), event, shellQuote(agent)),
+			"command": fmt.Sprintf("%s hook antigravity %s --as %s", hookQuote(exe), event, hookQuote(agent)),
 			"timeout": 15,
 		}}
 	}
 	return map[string]any{"PreInvocation": handler("pre-invocation"), "Stop": handler("stop")}
+}
+
+// hookQuote quotes an argument for the shell Antigravity runs hooks with:
+// sh -c, or cmd /c on Windows, where only double quotes group.
+func hookQuote(s string) string {
+	if runtime.GOOS == "windows" {
+		return `"` + strings.ReplaceAll(s, `"`, "") + `"`
+	}
+	return shellQuote(s)
 }
 
 // jsonEntry sets the value at key, a path of object keys, in a JSON file,
@@ -507,7 +530,11 @@ func (r *setupRun) jsonEntry(path string, key []string, value any) error {
 			root = map[string]any{}
 		}
 	}
-	if !setJSONPath(root, key, value) {
+	changed, err := setJSONPath(root, key, value)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	if !changed {
 		return nil
 	}
 	out := ""
@@ -522,36 +549,41 @@ func (r *setupRun) jsonEntry(path string, key []string, value any) error {
 }
 
 // setJSONPath sets or, for a nil value, deletes obj[key...], and says whether
-// anything changed.
-func setJSONPath(obj map[string]any, key []string, value any) bool {
+// anything changed. It won't replace something that isn't an object on the
+// way, which would lose what the user had there.
+func setJSONPath(obj map[string]any, key []string, value any) (bool, error) {
 	if len(key) == 1 {
 		old, had := obj[key[0]]
 		if value == nil {
 			delete(obj, key[0])
-			return had
+			return had, nil
 		}
 		// Compare as JSON, which is how the file holds it.
 		a, _ := json.Marshal(old)
 		b, _ := json.Marshal(value)
 		if had && string(a) == string(b) {
-			return false
+			return false, nil
 		}
 		obj[key[0]] = value
-		return true
+		return true, nil
 	}
-	child, ok := obj[key[0]].(map[string]any)
-	if !ok {
-		if value == nil {
-			return false
-		}
+	next, had := obj[key[0]]
+	child, ok := next.(map[string]any)
+	switch {
+	case ok:
+	case had && next != nil:
+		return false, fmt.Errorf("%s isn't a JSON object, so birdie won't change it", key[0])
+	case value == nil:
+		return false, nil
+	default:
 		child = map[string]any{}
 		obj[key[0]] = child
 	}
-	changed := setJSONPath(child, key[1:], value)
+	changed, err := setJSONPath(child, key[1:], value)
 	if value == nil && len(child) == 0 {
 		delete(obj, key[0])
 	}
-	return changed
+	return changed, err
 }
 
 // hermesHome is the Hermes profile setup applies to.

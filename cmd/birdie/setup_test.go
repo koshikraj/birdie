@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -456,4 +457,102 @@ func TestSetupAntigravityEmptyConfig(t *testing.T) {
 	if err := setupAntigravity(r); err == nil {
 		t.Fatal("broken JSON should stop setup, not be overwritten")
 	}
+}
+
+func TestSetupAntigravityRemoveKeepsBackupsAndOthers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	dir := filepath.Join(home, ".gemini", "config")
+	os.MkdirAll(dir, 0o700)
+	hooksPath := filepath.Join(dir, "hooks.json")
+	r := &setupRun{exe: "/bin/birdie", agent: "antigravity", stamp: "t", home: home}
+	if err := setupAntigravity(r); err != nil {
+		t.Fatal(err)
+	}
+	installed, _ := os.ReadFile(hooksPath)
+
+	// A dry run says it would remove the file setup made.
+	r.remove, r.dry, r.said = true, true, 0
+	out := captureStdout(t, func() {
+		if err := setupAntigravity(r); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(out, "would remove "+hooksPath) {
+		t.Fatalf("dry run said:\n%s", out)
+	}
+	r.dry, r.stamp = false, "t2"
+	if err := setupAntigravity(r); err != nil {
+		t.Fatal(err)
+	}
+	if exists(hooksPath) {
+		t.Fatal("setup's own hooks file left behind")
+	}
+	backup := filepath.Join(home, ".config", "birdie", "backups", "t2", ".gemini_config_hooks.json")
+	if b, err := os.ReadFile(backup); err != nil || string(b) != string(installed) {
+		t.Fatalf("backup = %q, %v; want what was installed", b, err)
+	}
+
+	// The user's own hooks file, even an empty one, is not birdie's to delete.
+	os.WriteFile(hooksPath, []byte("{}"), 0o600)
+	r.stamp = "t3"
+	if err := setupAntigravity(r); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(hooksPath); string(b) != "{}" {
+		t.Fatalf("user's hooks file = %q", b)
+	}
+}
+
+func TestSetupAntigravityRefusesOddConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	dir := filepath.Join(home, ".gemini", "config")
+	os.MkdirAll(dir, 0o700)
+	mcp := filepath.Join(dir, "mcp_config.json")
+	os.WriteFile(mcp, []byte(`{"mcpServers": ["keep me"]}`), 0o600)
+	r := &setupRun{exe: "/bin/birdie", agent: "antigravity", stamp: "t", home: home}
+	if err := setupAntigravity(r); err == nil || !strings.Contains(err.Error(), "isn't a JSON object") {
+		t.Fatalf("err = %v", err)
+	}
+	if b, _ := os.ReadFile(mcp); string(b) != `{"mcpServers": ["keep me"]}` {
+		t.Fatalf("config changed: %s", b)
+	}
+}
+
+func TestBackupKeepsTheFirstCopy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	path := filepath.Join(home, "f.json")
+	r := &setupRun{stamp: "t", home: home}
+	os.WriteFile(path, []byte("original"), 0o600)
+	if err := r.write(path, "first change"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.write(path, "second change"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, ".config", "birdie", "backups", "t", "f.json")); string(b) != "original" {
+		t.Fatalf("backup = %q", b)
+	}
+}
+
+// captureStdout returns what f prints, for code that prints straight to stdout.
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	done := make(chan []byte)
+	go func() { b, _ := io.ReadAll(r); done <- b }()
+	defer func() { os.Stdout = old }()
+	f()
+	w.Close()
+	os.Stdout = old
+	return string(<-done)
 }
