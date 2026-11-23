@@ -41,6 +41,7 @@ Usage:
   birdie setup claude|codex|grok|hermes|antigravity|--all [--as NAME] [--remove] [--dry-run] [--wake]
   birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]
   birdie service install|remove|status [--db PATH]
+  birdie config list | get NAME | set NAME VALUE | unset NAME
   birdie mcp --as NAME [--no-push] [--channel [--server-name birdie]] [--url URL]
   birdie agent add NAME [--description TEXT] [--webhook URL [--auth-file PATH] [--auth-header H]]
   birdie agent add NAME --acp "COMMAND" [--cwd DIR] [--permission reject|allow] [--timeout 20m] [--max-replies 10]
@@ -55,6 +56,7 @@ Usage:
   birdie inbox --as NAME [--wait 30s] [--thread ID]
   birdie thread THREAD_ID|MSG_ID [--full]
   birdie thread rename THREAD_ID "TITLE"
+  birdie thread continue THREAD_ID|MSG_ID
   birdie version
 
 Each agent's token is stored in %s/<name> (mode 0600).
@@ -93,6 +95,8 @@ func main() {
 		err = setup(ctx, args)
 	case "service":
 		err = serviceCmd(ctx, args)
+	case "config":
+		err = configCmd(ctx, args)
 	case "agent":
 		err = agentCmd(ctx, args)
 	case "session":
@@ -174,12 +178,26 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
+// loopOverride is the bus's LoopLimit for --loop-limit n. Left out, the limit
+// comes from birdie config.
+func loopOverride(fs *flag.FlagSet, n int) int {
+	given := false
+	fs.Visit(func(f *flag.Flag) { given = given || f.Name == "loop-limit" })
+	switch {
+	case !given:
+		return 0
+	case n == 0:
+		return -1
+	}
+	return n
+}
+
 func serve(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:7777", "listen address")
 	db := fs.String("db", defaultDB(), "SQLite database path")
 	publicURL := fs.String("public-url", "", "externally reachable base URL (e.g. a tunnel), advertised to webhook agents for replies")
-	loopLimit := fs.Int("loop-limit", bus.DefaultLoopLimit, "messages one agent may send another in 10 minutes before they're refused as a loop (0 = no limit)")
+	loopLimit := fs.Int("loop-limit", bus.DefaultLoopLimit, "messages one agent may send another in 10 minutes before they're refused as a loop (0 = no limit); overrides birdie config")
 	if _, err := parse(fs, args); err != nil {
 		return err
 	}
@@ -197,10 +215,7 @@ func serve(ctx context.Context, args []string) error {
 	defer st.Close()
 	acp := &adapter.ACP{State: st, Log: logger, Version: version}
 	b := bus.New(st, logger, &adapter.Webhook{HTTP: &http.Client{}, PublicURL: *publicURL}, acp)
-	b.LoopLimit = *loopLimit
-	if *loopLimit == 0 {
-		b.LoopLimit = -1
-	}
+	b.LoopLimit = loopOverride(fs, *loopLimit)
 	acp.Bus = b
 	acp.Start(ctx)
 	go b.RunDelivery(ctx)

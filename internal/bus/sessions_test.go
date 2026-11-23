@@ -3,11 +3,17 @@ package bus_test
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
+	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"birdie/internal/bus"
+	"birdie/internal/store"
 )
 
 func report(t *testing.T, b *bus.Bus, agent, id, name, tier string, active time.Time) {
@@ -302,6 +308,161 @@ func TestLoopLimit(t *testing.T) {
 	b.LoopLimit = -1
 	if _, err := b.Send(ctx, "a", bus.SendInput{To: "b", Content: "x"}); err != nil {
 		t.Fatalf("limit off: %v", err)
+	}
+}
+
+func TestLoopLimitPerThread(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	addAgent(t, st, "a", nil)
+	addAgent(t, st, "b", nil)
+	b.LoopLimit = 2
+	send := func(in bus.SendInput) (bus.Message, error) {
+		in.To, in.Content = "b", "x"
+		return b.Send(ctx, "a", in)
+	}
+	first, err := send(bus.SendInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := bus.SendInput{ThreadID: first.ThreadID}
+	if _, err := send(in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := send(in); !errors.Is(err, bus.ErrLoop) || !strings.Contains(err.Error(), "birdie thread continue "+first.ThreadID) {
+		t.Fatalf("err = %v, want ErrLoop saying how to go on", err)
+	}
+	if _, err := send(bus.SendInput{InReplyTo: first.ID}); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("replies count too: %v", err)
+	}
+	// Another thread has its own count, however it's named.
+	if _, err := send(bus.SendInput{ThreadID: "thr_mine"}); err != nil {
+		t.Fatalf("a second thread: %v", err)
+	}
+	// Opening more threads is counted, so it's no way around the limit.
+	for _, id := range []string{"", "thr_other"} {
+		if _, err := send(bus.SendInput{ThreadID: id}); !errors.Is(err, bus.ErrLoop) {
+			t.Fatalf("a third thread %q: err = %v, want ErrLoop", id, err)
+		}
+	}
+
+	if err := b.ContinueThread(ctx, "thr_nope"); !errors.Is(err, bus.ErrNotFound) {
+		t.Fatalf("continue an unknown thread: %v", err)
+	}
+	if err := b.ContinueThread(ctx, first.ThreadID); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 {
+		if _, err := send(in); err != nil {
+			t.Fatalf("send %d after continuing: %v", i, err)
+		}
+	}
+	if _, err := send(in); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("the fresh allowance runs out too: %v", err)
+	}
+}
+
+func TestLoopLimitAtOnce(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	addAgent(t, st, "a", nil)
+	addAgent(t, st, "b", nil)
+	b.LoopLimit = 3
+	// Sent all at once: into one thread, into one new thread, and each
+	// starting its own.
+	first, err := b.Send(ctx, "a", bus.SendInput{To: "b", Content: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		thread string
+		want   int32
+	}{{first.ThreadID, 2}, {"thr_mine", 3}, {"", 1}} {
+		var sent atomic.Int32
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for range 20 {
+			wg.Go(func() {
+				<-start
+				if _, err := b.Send(ctx, "a", bus.SendInput{To: "b", ThreadID: tt.thread, Content: "x"}); err == nil {
+					sent.Add(1)
+				} else if !errors.Is(err, bus.ErrLoop) {
+					t.Error(err)
+				}
+			})
+		}
+		close(start)
+		wg.Wait()
+		if sent.Load() != tt.want {
+			t.Errorf("thread %q: %d got through, want %d", tt.thread, sent.Load(), tt.want)
+		}
+	}
+}
+
+func TestLoopLimitSetting(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "bus.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	b := bus.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	addAgent(t, st, "a", nil)
+	addAgent(t, st, "b", nil)
+	// Settings change from another process, on its own connection.
+	cli, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+	send := func() error {
+		_, err := b.Send(ctx, "a", bus.SendInput{To: "b", Content: "x"})
+		return err
+	}
+	set := func(v string) {
+		t.Helper()
+		if err := cli.SetState(ctx, bus.SettingKey(bus.SettingLoopLimit), v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set("1")
+	if err := send(); err != nil {
+		t.Fatal(err)
+	}
+	if err := send(); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("err = %v, want ErrLoop", err)
+	}
+	set("2")
+	if err := send(); err != nil {
+		t.Fatalf("a raised limit applies at once: %v", err)
+	}
+	if err := send(); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("err = %v, want ErrLoop", err)
+	}
+	set("0")
+	if err := send(); err != nil {
+		t.Fatalf("limit off: %v", err)
+	}
+	if err := cli.DeleteState(ctx, bus.SettingKey(bus.SettingLoopLimit)); err != nil {
+		t.Fatal(err)
+	}
+	for i := range bus.DefaultLoopLimit - 3 {
+		if err := send(); err != nil {
+			t.Fatalf("default limit, message %d: %v", i+4, err)
+		}
+	}
+	if err := send(); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("unset goes back to the default: %v", err)
+	}
+	b.LoopLimit = -1
+	if err := send(); err != nil {
+		t.Fatalf("the bus's own limit wins, when off: %v", err)
+	}
+	set("0")
+	b.LoopLimit = 1
+	if err := send(); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("the bus's own limit wins: %v", err)
 	}
 }
 

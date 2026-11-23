@@ -43,8 +43,12 @@ type Bus struct {
 	store      Store
 	deliverers map[string]Deliverer
 	log        *slog.Logger
-	// LoopLimit overrides DefaultLoopLimit; negative turns the check off.
+	// LoopLimit overrides the loop-limit setting; negative turns the check off.
 	LoopLimit int
+
+	// sending is held from admitting a message to saving it, so that messages
+	// sent at once can't all pass on the same count.
+	sending sync.Mutex
 
 	mu      sync.Mutex
 	waiters map[string]map[chan struct{}]struct{}
@@ -305,9 +309,6 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 	} else if err != nil {
 		return Message{}, err
 	}
-	if err := b.admit(ctx, from, to.Name); err != nil {
-		return Message{}, err
-	}
 	// In a thread already going, it goes to a session of that agent taking
 	// part in it, rather than whichever is the agent's default now: the most
 	// recent one still running, else the most recent one, whose mail falls to
@@ -349,7 +350,7 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 		Status:      StatusQueued,
 		CreatedAt:   time.Now().UTC(),
 	}
-	if err := b.store.SendMessage(ctx, m, Thread{ID: thread, Title: title, CreatedBy: from, CreatedAt: m.CreatedAt}); err != nil {
+	if err := b.admitAndSave(ctx, m, Thread{ID: thread, Title: title, CreatedBy: from, CreatedAt: m.CreatedAt}); err != nil {
 		return Message{}, err
 	}
 	b.emitMessage(StatusQueued, m, "", "")
@@ -520,23 +521,50 @@ func (b *Bus) Notice(ctx context.Context, m Message, kind, text string) error {
 	return nil
 }
 
-// admit decides whether from may message to right now. Rules about who may
-// reach whom belong here, including any later ones for other machines.
-func (b *Bus) admit(ctx context.Context, from, to string) error {
-	limit := b.LoopLimit
-	if limit == 0 {
-		limit = DefaultLoopLimit
+// admitAndSave stores m if it's allowed.
+func (b *Bus) admitAndSave(ctx context.Context, m Message, t Thread) error {
+	b.sending.Lock()
+	defer b.sending.Unlock()
+	if err := b.admit(ctx, m.From, m.To, m.ThreadID); err != nil {
+		return err
 	}
-	if limit < 0 {
+	return b.store.SendMessage(ctx, m, t)
+}
+
+// admit decides whether from may message to right now, in thread or, when
+// there's no such thread yet, by starting it. Rules about who may reach whom belong here,
+// including any later ones for other machines.
+//
+// Each thread has its own count. Threads started have one too, so a loop that
+// opens a new thread every time is still caught.
+func (b *Bus) admit(ctx context.Context, from, to, thread string) error {
+	limit, err := b.loopLimit(ctx)
+	if err != nil || limit < 0 {
+		return err
+	}
+	since := time.Now().Add(-LoopWindow)
+	exists, _, err := b.store.ThreadAccess(ctx, thread, from)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		n, err := b.store.CountStarted(ctx, from, to, since)
+		if err != nil {
+			return err
+		}
+		if n >= limit {
+			return fmt.Errorf("%w: %s has started %d threads with %s in the last %v, which looks like a loop; check with your user, who can raise the limit with: birdie config set %s N",
+				ErrLoop, from, n, to, LoopWindow, SettingLoopLimit)
+		}
 		return nil
 	}
-	n, err := b.store.CountSent(ctx, from, to, time.Now().Add(-LoopWindow))
+	n, err := b.store.CountSent(ctx, from, to, thread, since)
 	if err != nil {
 		return err
 	}
 	if n >= limit {
-		return fmt.Errorf("%w: %s has sent %s %d messages in the last %v, which looks like a loop; check with your user before continuing",
-			ErrLoop, from, to, n, LoopWindow)
+		return fmt.Errorf("%w: %s has sent %s %d messages in this thread in the last %v, which looks like a loop; check with your user, who can let it go on with: birdie thread continue %s",
+			ErrLoop, from, to, n, LoopWindow, thread)
 	}
 	return nil
 }

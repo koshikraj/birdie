@@ -123,3 +123,43 @@ func TestSendMessageKeepsBothOrNeither(t *testing.T) {
 		t.Fatalf("thread = %+v, err %v", th, err)
 	}
 }
+
+// Continuing a thread goes by the order of its messages, not their times: one
+// sent in the same millisecond, after it, still counts.
+func TestContinueThreadSameMillisecond(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "bus.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Now()
+	send := func(id, thread string) {
+		t.Helper()
+		m := bus.Message{ID: id, ThreadID: thread, From: "a", To: "b", Content: "x", Status: bus.StatusQueued, CreatedAt: now}
+		if err := st.SendMessage(ctx, m, bus.Thread{ID: thread, CreatedBy: "a", CreatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func(thread string, want int) {
+		t.Helper()
+		if n, err := st.CountSent(ctx, "a", "b", thread, now.Add(-time.Minute)); err != nil || n != want {
+			t.Fatalf("count in %s = %d, %v; want %d", thread, n, err, want)
+		}
+	}
+	send("m1", "t1")
+	send("m2", "t2")
+	count("t1", 1)
+	for range 2 { // continuing again works too
+		if err := st.ContinueThread(ctx, "t1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count("t1", 0)
+	count("t2", 1)
+	send("m3", "t1")
+	count("t1", 1)
+	if err := st.ContinueThread(ctx, "nope"); !errors.Is(err, bus.ErrNotFound) {
+		t.Fatalf("unknown thread: %v", err)
+	}
+}
