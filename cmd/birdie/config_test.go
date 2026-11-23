@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"flag"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,5 +45,27 @@ func TestConfig(t *testing.T) {
 	}
 	if got, _ := run("get", "loop-limit"); got != "12\n" {
 		t.Errorf("a refused value was saved: %q", got)
+	}
+}
+
+func TestLoopOverride(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want int
+	}{
+		{nil, 0}, // birdie config decides
+		{[]string{"--loop-limit", "0"}, -1},
+		{[]string{"--loop-limit", "12"}, 12},
+		{[]string{"--loop-limit=60"}, 60},
+	} {
+		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		n := fs.Int("loop-limit", 12, "")
+		if _, err := parse(fs, tt.args); err != nil {
+			t.Fatal(err)
+		}
+		if got := loopOverride(fs, *n); got != tt.want {
+			t.Errorf("serve %v: override %d, want %d", tt.args, got, tt.want)
+		}
 	}
 }

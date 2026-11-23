@@ -114,17 +114,22 @@ func continueThreadCmd(ctx context.Context, args []string) error {
 		return err
 	}
 	defer st.Close()
-	id := pos[0]
-	if m, err := st.GetMessage(ctx, id); err == nil {
+	return continueThread(ctx, os.Stdout, st, pos[0])
+}
+
+// continueThread continues the thread ref names, or that message ref is in.
+func continueThread(ctx context.Context, w io.Writer, st *store.SQLite, ref string) error {
+	id := ref
+	if m, err := st.GetMessage(ctx, ref); err == nil {
 		id = m.ThreadID
 	}
 	b := bus.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err := b.ContinueThread(ctx, id); errors.Is(err, bus.ErrNotFound) {
-		return fmt.Errorf("no thread or message %q", pos[0])
+		return fmt.Errorf("no thread or message %q", ref)
 	} else if err != nil {
 		return err
 	}
-	fmt.Printf("Thread %s can go on: messages sent in it so far no longer count towards the loop limit.\n", id)
+	fmt.Fprintf(w, "Thread %s can go on: messages sent in it so far no longer count towards the loop limit.\n", id)
 	return nil
 }
 

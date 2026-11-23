@@ -3,6 +3,9 @@ package bus_test
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -10,6 +13,7 @@ import (
 	"time"
 
 	"birdie/internal/bus"
+	"birdie/internal/store"
 )
 
 func report(t *testing.T, b *bus.Bus, agent, id, name, tier string, active time.Time) {
@@ -348,7 +352,6 @@ func TestLoopLimitPerThread(t *testing.T) {
 	if err := b.ContinueThread(ctx, first.ThreadID); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(5 * time.Millisecond)
 	for i := range 2 {
 		if _, err := send(in); err != nil {
 			t.Fatalf("send %d after continuing: %v", i, err)
@@ -398,16 +401,28 @@ func TestLoopLimitAtOnce(t *testing.T) {
 
 func TestLoopLimitSetting(t *testing.T) {
 	ctx := context.Background()
-	b, st := newBus(t)
+	path := filepath.Join(t.TempDir(), "bus.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	b := bus.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	addAgent(t, st, "a", nil)
 	addAgent(t, st, "b", nil)
+	// Settings change from another process, on its own connection.
+	cli, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
 	send := func() error {
 		_, err := b.Send(ctx, "a", bus.SendInput{To: "b", Content: "x"})
 		return err
 	}
 	set := func(v string) {
 		t.Helper()
-		if err := st.SetState(ctx, bus.SettingKey(bus.SettingLoopLimit), v); err != nil {
+		if err := cli.SetState(ctx, bus.SettingKey(bus.SettingLoopLimit), v); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -429,6 +444,22 @@ func TestLoopLimitSetting(t *testing.T) {
 	if err := send(); err != nil {
 		t.Fatalf("limit off: %v", err)
 	}
+	if err := cli.DeleteState(ctx, bus.SettingKey(bus.SettingLoopLimit)); err != nil {
+		t.Fatal(err)
+	}
+	for i := range bus.DefaultLoopLimit - 3 {
+		if err := send(); err != nil {
+			t.Fatalf("default limit, message %d: %v", i+4, err)
+		}
+	}
+	if err := send(); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("unset goes back to the default: %v", err)
+	}
+	b.LoopLimit = -1
+	if err := send(); err != nil {
+		t.Fatalf("the bus's own limit wins, when off: %v", err)
+	}
+	set("0")
 	b.LoopLimit = 1
 	if err := send(); !errors.Is(err, bus.ErrLoop) {
 		t.Fatalf("the bus's own limit wins: %v", err)

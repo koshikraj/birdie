@@ -178,6 +178,20 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
+// loopOverride is the bus's LoopLimit for --loop-limit n. Left out, the limit
+// comes from birdie config.
+func loopOverride(fs *flag.FlagSet, n int) int {
+	given := false
+	fs.Visit(func(f *flag.Flag) { given = given || f.Name == "loop-limit" })
+	switch {
+	case !given:
+		return 0
+	case n == 0:
+		return -1
+	}
+	return n
+}
+
 func serve(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:7777", "listen address")
@@ -201,15 +215,7 @@ func serve(ctx context.Context, args []string) error {
 	defer st.Close()
 	acp := &adapter.ACP{State: st, Log: logger, Version: version}
 	b := bus.New(st, logger, &adapter.Webhook{HTTP: &http.Client{}, PublicURL: *publicURL}, acp)
-	// Left out, the limit comes from birdie config.
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name != "loop-limit" {
-			return
-		}
-		if b.LoopLimit = *loopLimit; *loopLimit == 0 {
-			b.LoopLimit = -1
-		}
-	})
+	b.LoopLimit = loopOverride(fs, *loopLimit)
 	acp.Bus = b
 	acp.Start(ctx)
 	go b.RunDelivery(ctx)

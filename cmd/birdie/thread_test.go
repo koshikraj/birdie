@@ -52,3 +52,28 @@ func TestPrintThread(t *testing.T) {
 		t.Errorf("--full should show everything:\n%s", out.String())
 	}
 }
+
+func TestContinueThread(t *testing.T) {
+	ctx := context.Background()
+	b, st := statusBus(t)
+	b.LoopLimit = 1
+	m, err := b.Send(ctx, "codex", bus.SendInput{To: "claude", Content: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{m.ThreadID, m.ID} {
+		if _, err := b.Send(ctx, "codex", bus.SendInput{InReplyTo: m.ID, To: "claude", Content: "x"}); err == nil {
+			t.Fatal("the limit should stop this")
+		}
+		var out bytes.Buffer
+		if err := continueThread(ctx, &out, st, ref); err != nil || !strings.Contains(out.String(), m.ThreadID) {
+			t.Fatalf("continue %s = %q, %v", ref, out.String(), err)
+		}
+		if _, err := b.Send(ctx, "codex", bus.SendInput{InReplyTo: m.ID, To: "claude", Content: "x"}); err != nil {
+			t.Fatalf("after continuing %s: %v", ref, err)
+		}
+	}
+	if err := continueThread(ctx, &bytes.Buffer{}, st, "msg_nope"); err == nil {
+		t.Error("continued an unknown message")
+	}
+}
