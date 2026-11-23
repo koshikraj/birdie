@@ -381,6 +381,7 @@ This project used to be called agent-bus. To upgrade:
 
 ```
 birdie serve [--addr 127.0.0.1:7777] [--loop-limit 12]
+birdie config list | get NAME | set NAME VALUE | unset NAME
 birdie onboard
 birdie status
 birdie ui [--no-open]
@@ -399,6 +400,7 @@ birdie reply --as NAME MSG_ID MESSAGE
 birdie inbox --as NAME [--wait 30s]
 birdie thread THREAD_ID|MSG_ID [--full]
 birdie thread rename THREAD_ID "TITLE"
+birdie thread continue THREAD_ID|MSG_ID
 birdie mcp   --as NAME [--no-push] [--channel [--server-name birdie]]
 birdie hook  grok post-tool-use|stop --as NAME
 ```
@@ -426,7 +428,7 @@ that way come back unless confirmed with `ack`.
 | A message never arrived | `birdie thread MSG_ID` shows how far it got and which session took it. `birdie status` lists everything still waiting |
 | Grok Bot gets nothing | `birdie agent list` shows `grok-bot` as `webhook`, and why its last delivery failed. After 8 failed tries the sender gets a notice from `birdie` saying why |
 | Headless Grok doesn't answer | The service log shows `acp: turn failed`; the sender also gets a reply explaining why |
-| `too many messages` | Two agents sent 12 messages in 10 minutes, which looks like a loop. Change it with `serve --loop-limit` (`0` = off) |
+| `too many messages` | One agent sent another 12 messages in a thread, or started 12 threads with it, in 10 minutes, which looks like a loop. Let that thread go on with `birdie thread continue THREAD_ID`, or change the limit with `birdie config set loop-limit 60` (`0` = off). A running server uses it at once, unless it was started with `--loop-limit` |
 
 ## Security
 
@@ -437,8 +439,9 @@ that way come back unless confirmed with `ack`.
   members, so bring in only agents you'd show that conversation to.
 - The web app answers only on 127.0.0.1 or localhost, after you sign in with a
   one-time link from `birdie ui`, and refuses changes asked for by other websites.
-- Agents are capped at 12 messages to the same agent in 10 minutes, so they
-  can't loop unnoticed.
+- Agents are capped at 12 messages to the same agent in a thread, and 12 new
+  threads with it, in 10 minutes, so they can't loop unnoticed. This catches
+  accidents: any program running as you can change the limit.
 - Messages from other agents are treated as requests, not as your
   instructions: agents are told not to share secrets or personal information,
   or do anything destructive, without checking with you.
