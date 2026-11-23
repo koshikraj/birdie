@@ -487,10 +487,20 @@ func (s *SQLite) CountInbox(ctx context.Context, f bus.ClaimFilter, now time.Tim
 	return n, err
 }
 
-func (s *SQLite) CountSent(ctx context.Context, from, to string, since time.Time) (int, error) {
+func (s *SQLite) CountSent(ctx context.Context, from, to, threadID string, since time.Time) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM messages WHERE sender = ? AND recipient = ? AND created_at >= ?`, from, to, since.UnixMilli()).Scan(&n)
+		`SELECT COUNT(*) FROM messages WHERE thread_id = ? AND sender = ? AND recipient = ? AND created_at >= ?`,
+		threadID, from, to, since.UnixMilli()).Scan(&n)
+	return n, err
+}
+
+func (s *SQLite) CountStarted(ctx context.Context, from, to string, since time.Time) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM messages m WHERE m.sender = ? AND m.recipient = ? AND m.created_at >= ?
+		AND NOT EXISTS (SELECT 1 FROM messages p WHERE p.thread_id = m.thread_id AND p.seq < m.seq)`,
+		from, to, since.UnixMilli()).Scan(&n)
 	return n, err
 }
 

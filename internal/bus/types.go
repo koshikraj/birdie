@@ -269,8 +269,11 @@ type Store interface {
 	ClaimInbox(ctx context.Context, f ClaimFilter, now time.Time) ([]Message, error)
 	// CountInbox counts what ClaimInbox would take.
 	CountInbox(ctx context.Context, f ClaimFilter, now time.Time) (int, error)
-	// CountSent counts messages from one agent to another since a time.
-	CountSent(ctx context.Context, from, to string, since time.Time) (int, error)
+	// CountSent counts messages from one agent to another in a thread since a
+	// time.
+	CountSent(ctx context.Context, from, to, threadID string, since time.Time) (int, error)
+	// CountStarted counts threads one agent started with another since a time.
+	CountStarted(ctx context.Context, from, to string, since time.Time) (int, error)
 
 	DueOutbound(ctx context.Context, now time.Time, limit int) ([]Outbound, error)
 	MarkDelivered(ctx context.Context, id string, at time.Time) error
@@ -300,6 +303,8 @@ type Store interface {
 
 	// GetState returns what was saved under key, or ErrNotFound.
 	GetState(ctx context.Context, key string) (string, error)
+	// SetState saves value under key.
+	SetState(ctx context.Context, key, value string) error
 
 	Close() error
 }

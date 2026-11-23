@@ -241,7 +241,8 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 	}
 
 	thread := in.ThreadID
-	var pinned string // the session the thread says should get this
+	opens := in.InReplyTo == "" // whether this starts a new thread
+	var pinned string           // the session the thread says should get this
 	var parent Message
 	if in.InReplyTo != "" {
 		var err error
@@ -285,6 +286,7 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 		if exists && !member {
 			return Message{}, fmt.Errorf("%w: not a participant in thread %q", ErrForbidden, thread)
 		}
+		opens = !exists
 	}
 	if in.To == "" {
 		return Message{}, fmt.Errorf("%w: to is required unless in_reply_to is set", ErrInvalid)
@@ -305,7 +307,11 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 	} else if err != nil {
 		return Message{}, err
 	}
-	if err := b.admit(ctx, from, to.Name); err != nil {
+	counted := thread
+	if opens {
+		counted = ""
+	}
+	if err := b.admit(ctx, from, to.Name, counted); err != nil {
 		return Message{}, err
 	}
 	// In a thread already going, it goes to a session of that agent taking
@@ -520,20 +526,41 @@ func (b *Bus) Notice(ctx context.Context, m Message, kind, text string) error {
 	return nil
 }
 
-// admit decides whether from may message to right now. Rules about who may
-// reach whom belong here, including any later ones for other machines.
-func (b *Bus) admit(ctx context.Context, from, to string) error {
+// admit decides whether from may message to right now, in thread or, when
+// that's empty, by starting one. Rules about who may reach whom belong here,
+// including any later ones for other machines.
+//
+// Each thread has its own count. Threads started have one too, so a loop that
+// opens a new thread every time is still caught.
+func (b *Bus) admit(ctx context.Context, from, to, thread string) error {
 	limit, err := b.loopLimit(ctx)
 	if err != nil || limit < 0 {
 		return err
 	}
-	n, err := b.store.CountSent(ctx, from, to, time.Now().Add(-LoopWindow))
+	since := time.Now().Add(-LoopWindow)
+	if thread == "" {
+		n, err := b.store.CountStarted(ctx, from, to, since)
+		if err != nil {
+			return err
+		}
+		if n >= limit {
+			return fmt.Errorf("%w: %s has started %d threads with %s in the last %v, which looks like a loop; check with your user, who can raise the limit with: birdie config set %s N",
+				ErrLoop, from, n, to, LoopWindow, SettingLoopLimit)
+		}
+		return nil
+	}
+	if at, err := b.continuedAt(ctx, thread); err != nil {
+		return err
+	} else if at.After(since) {
+		since = at
+	}
+	n, err := b.store.CountSent(ctx, from, to, thread, since)
 	if err != nil {
 		return err
 	}
 	if n >= limit {
-		return fmt.Errorf("%w: %s has sent %s %d messages in the last %v, which looks like a loop; check with your user before continuing",
-			ErrLoop, from, to, n, LoopWindow)
+		return fmt.Errorf("%w: %s has sent %s %d messages in this thread in the last %v, which looks like a loop; check with your user, who can let it go on with: birdie thread continue %s",
+			ErrLoop, from, to, n, LoopWindow, thread)
 	}
 	return nil
 }

@@ -56,6 +56,7 @@ Usage:
   birdie inbox --as NAME [--wait 30s] [--thread ID]
   birdie thread THREAD_ID|MSG_ID [--full]
   birdie thread rename THREAD_ID "TITLE"
+  birdie thread continue THREAD_ID|MSG_ID
   birdie version
 
 Each agent's token is stored in %s/<name> (mode 0600).

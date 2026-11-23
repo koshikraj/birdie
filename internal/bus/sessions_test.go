@@ -305,6 +305,58 @@ func TestLoopLimit(t *testing.T) {
 	}
 }
 
+func TestLoopLimitPerThread(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	addAgent(t, st, "a", nil)
+	addAgent(t, st, "b", nil)
+	b.LoopLimit = 2
+	send := func(in bus.SendInput) (bus.Message, error) {
+		in.To, in.Content = "b", "x"
+		return b.Send(ctx, "a", in)
+	}
+	first, err := send(bus.SendInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := bus.SendInput{ThreadID: first.ThreadID}
+	if _, err := send(in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := send(in); !errors.Is(err, bus.ErrLoop) || !strings.Contains(err.Error(), "birdie thread continue "+first.ThreadID) {
+		t.Fatalf("err = %v, want ErrLoop saying how to go on", err)
+	}
+	if _, err := send(bus.SendInput{InReplyTo: first.ID}); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("replies count too: %v", err)
+	}
+	// Another thread has its own count, however it's named.
+	if _, err := send(bus.SendInput{ThreadID: "thr_mine"}); err != nil {
+		t.Fatalf("a second thread: %v", err)
+	}
+	// Opening more threads is counted, so it's no way around the limit.
+	for _, id := range []string{"", "thr_other"} {
+		if _, err := send(bus.SendInput{ThreadID: id}); !errors.Is(err, bus.ErrLoop) {
+			t.Fatalf("a third thread %q: err = %v, want ErrLoop", id, err)
+		}
+	}
+
+	if err := b.ContinueThread(ctx, "thr_nope"); !errors.Is(err, bus.ErrNotFound) {
+		t.Fatalf("continue an unknown thread: %v", err)
+	}
+	if err := b.ContinueThread(ctx, first.ThreadID); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	for i := range 2 {
+		if _, err := send(in); err != nil {
+			t.Fatalf("send %d after continuing: %v", i, err)
+		}
+	}
+	if _, err := send(in); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("the fresh allowance runs out too: %v", err)
+	}
+}
+
 func TestLoopLimitSetting(t *testing.T) {
 	ctx := context.Background()
 	b, st := newBus(t)

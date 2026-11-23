@@ -21,6 +21,9 @@ func threadCmd(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "rename" {
 		return renameThreadCmd(ctx, args[1:])
 	}
+	if len(args) > 0 && args[0] == "continue" {
+		return continueThreadCmd(ctx, args[1:])
+	}
 	fs := flag.NewFlagSet("thread", flag.ContinueOnError)
 	db := fs.String("db", defaultDB(), "SQLite database path")
 	full := fs.Bool("full", false, "show each message in full")
@@ -92,6 +95,36 @@ func renameThreadCmd(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Printf("Thread %s is now %q.\n", id, title)
+	return nil
+}
+
+// continueThreadCmd lets a thread birdie stopped as a loop go on.
+func continueThreadCmd(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("thread continue", flag.ContinueOnError)
+	db := fs.String("db", defaultDB(), "SQLite database path")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return errors.New("usage: birdie thread continue THREAD_ID|MSG_ID")
+	}
+	st, err := store.Open(*db)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	id := pos[0]
+	if m, err := st.GetMessage(ctx, id); err == nil {
+		id = m.ThreadID
+	}
+	b := bus.New(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := b.ContinueThread(ctx, id); errors.Is(err, bus.ErrNotFound) {
+		return fmt.Errorf("no thread or message %q", pos[0])
+	} else if err != nil {
+		return err
+	}
+	fmt.Printf("Thread %s can go on: messages sent in it so far no longer count towards the loop limit.\n", id)
 	return nil
 }
 
