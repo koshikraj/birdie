@@ -298,6 +298,9 @@ type Store interface {
 	// or not.
 	RecentSessions(ctx context.Context, agent string, since time.Time) ([]Session, error)
 
+	// GetState returns what was saved under key, or ErrNotFound.
+	GetState(ctx context.Context, key string) (string, error)
+
 	Close() error
 }
 

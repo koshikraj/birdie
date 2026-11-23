@@ -43,7 +43,7 @@ type Bus struct {
 	store      Store
 	deliverers map[string]Deliverer
 	log        *slog.Logger
-	// LoopLimit overrides DefaultLoopLimit; negative turns the check off.
+	// LoopLimit overrides the loop-limit setting; negative turns the check off.
 	LoopLimit int
 
 	mu      sync.Mutex
@@ -523,12 +523,9 @@ func (b *Bus) Notice(ctx context.Context, m Message, kind, text string) error {
 // admit decides whether from may message to right now. Rules about who may
 // reach whom belong here, including any later ones for other machines.
 func (b *Bus) admit(ctx context.Context, from, to string) error {
-	limit := b.LoopLimit
-	if limit == 0 {
-		limit = DefaultLoopLimit
-	}
-	if limit < 0 {
-		return nil
+	limit, err := b.loopLimit(ctx)
+	if err != nil || limit < 0 {
+		return err
 	}
 	n, err := b.store.CountSent(ctx, from, to, time.Now().Add(-LoopWindow))
 	if err != nil {

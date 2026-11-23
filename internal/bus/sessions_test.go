@@ -305,6 +305,45 @@ func TestLoopLimit(t *testing.T) {
 	}
 }
 
+func TestLoopLimitSetting(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	addAgent(t, st, "a", nil)
+	addAgent(t, st, "b", nil)
+	send := func() error {
+		_, err := b.Send(ctx, "a", bus.SendInput{To: "b", Content: "x"})
+		return err
+	}
+	set := func(v string) {
+		t.Helper()
+		if err := st.SetState(ctx, bus.SettingKey(bus.SettingLoopLimit), v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set("1")
+	if err := send(); err != nil {
+		t.Fatal(err)
+	}
+	if err := send(); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("err = %v, want ErrLoop", err)
+	}
+	set("2")
+	if err := send(); err != nil {
+		t.Fatalf("a raised limit applies at once: %v", err)
+	}
+	if err := send(); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("err = %v, want ErrLoop", err)
+	}
+	set("0")
+	if err := send(); err != nil {
+		t.Fatalf("limit off: %v", err)
+	}
+	b.LoopLimit = 1
+	if err := send(); !errors.Is(err, bus.ErrLoop) {
+		t.Fatalf("the bus's own limit wins: %v", err)
+	}
+}
+
 type fakeDeliverer struct {
 	kind string
 	err  error

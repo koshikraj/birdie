@@ -41,6 +41,7 @@ Usage:
   birdie setup claude|codex|grok|hermes|antigravity|--all [--as NAME] [--remove] [--dry-run] [--wake]
   birdie setup grok-bot [--webhook URL --auth-file PATH] [--remove] [--dry-run]
   birdie service install|remove|status [--db PATH]
+  birdie config list | get NAME | set NAME VALUE | unset NAME
   birdie mcp --as NAME [--no-push] [--channel [--server-name birdie]] [--url URL]
   birdie agent add NAME [--description TEXT] [--webhook URL [--auth-file PATH] [--auth-header H]]
   birdie agent add NAME --acp "COMMAND" [--cwd DIR] [--permission reject|allow] [--timeout 20m] [--max-replies 10]
@@ -93,6 +94,8 @@ func main() {
 		err = setup(ctx, args)
 	case "service":
 		err = serviceCmd(ctx, args)
+	case "config":
+		err = configCmd(ctx, args)
 	case "agent":
 		err = agentCmd(ctx, args)
 	case "session":
@@ -179,7 +182,7 @@ func serve(ctx context.Context, args []string) error {
 	addr := fs.String("addr", "127.0.0.1:7777", "listen address")
 	db := fs.String("db", defaultDB(), "SQLite database path")
 	publicURL := fs.String("public-url", "", "externally reachable base URL (e.g. a tunnel), advertised to webhook agents for replies")
-	loopLimit := fs.Int("loop-limit", bus.DefaultLoopLimit, "messages one agent may send another in 10 minutes before they're refused as a loop (0 = no limit)")
+	loopLimit := fs.Int("loop-limit", bus.DefaultLoopLimit, "messages one agent may send another in 10 minutes before they're refused as a loop (0 = no limit); overrides birdie config")
 	if _, err := parse(fs, args); err != nil {
 		return err
 	}
@@ -197,10 +200,15 @@ func serve(ctx context.Context, args []string) error {
 	defer st.Close()
 	acp := &adapter.ACP{State: st, Log: logger, Version: version}
 	b := bus.New(st, logger, &adapter.Webhook{HTTP: &http.Client{}, PublicURL: *publicURL}, acp)
-	b.LoopLimit = *loopLimit
-	if *loopLimit == 0 {
-		b.LoopLimit = -1
-	}
+	// Left out, the limit comes from birdie config.
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name != "loop-limit" {
+			return
+		}
+		if b.LoopLimit = *loopLimit; *loopLimit == 0 {
+			b.LoopLimit = -1
+		}
+	})
 	acp.Bus = b
 	acp.Start(ctx)
 	go b.RunDelivery(ctx)
