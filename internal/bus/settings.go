@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"time"
 )
 
 // SettingLoopLimit is how many messages one agent may send another in
@@ -70,30 +69,9 @@ func (b *Bus) loopLimit(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-func continueKey(threadID string) string { return "continue:" + threadID }
-
 // ContinueThread gives everyone in a thread a fresh loop allowance: messages
 // sent there before now no longer count. It's for the machine's owner, not for
 // agents.
 func (b *Bus) ContinueThread(ctx context.Context, threadID string) error {
-	if _, err := b.store.GetThread(ctx, threadID); err != nil {
-		return err
-	}
-	return b.store.SetState(ctx, continueKey(threadID), strconv.FormatInt(time.Now().UnixMilli(), 10))
-}
-
-// continuedAt is when the owner last let a thread go on, or zero.
-func (b *Bus) continuedAt(ctx context.Context, threadID string) (time.Time, error) {
-	v, err := b.store.GetState(ctx, continueKey(threadID))
-	if errors.Is(err, ErrNotFound) {
-		return time.Time{}, nil
-	} else if err != nil {
-		return time.Time{}, err
-	}
-	ms, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return time.Time{}, nil
-	}
-	// Message times are kept in milliseconds: count from the next one.
-	return time.UnixMilli(ms + 1), nil
+	return b.store.ContinueThread(ctx, threadID)
 }

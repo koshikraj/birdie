@@ -490,9 +490,29 @@ func (s *SQLite) CountInbox(ctx context.Context, f bus.ClaimFilter, now time.Tim
 func (s *SQLite) CountSent(ctx context.Context, from, to, threadID string, since time.Time) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM messages WHERE thread_id = ? AND sender = ? AND recipient = ? AND created_at >= ?`,
-		threadID, from, to, since.UnixMilli()).Scan(&n)
+		`SELECT COUNT(*) FROM messages WHERE thread_id = ? AND sender = ? AND recipient = ? AND created_at >= ?
+		AND seq > COALESCE((SELECT CAST(value AS INTEGER) FROM state WHERE key = ?), 0)`,
+		threadID, from, to, since.UnixMilli(), continuedPrefix+threadID).Scan(&n)
 	return n, err
+}
+
+// continuedPrefix keys the last message a thread had when its owner let it go
+// on.
+const continuedPrefix = "continued:"
+
+func (s *SQLite) ContinueThread(ctx context.Context, threadID string) error {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO state (key, value)
+		SELECT ?, CAST(MAX(seq) AS TEXT) FROM messages WHERE thread_id = ? HAVING COUNT(*) > 0
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, continuedPrefix+threadID, threadID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return fmt.Errorf("%w: thread %q", bus.ErrNotFound, threadID)
+	}
+	return nil
 }
 
 func (s *SQLite) CountStarted(ctx context.Context, from, to string, since time.Time) (int, error) {

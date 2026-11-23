@@ -558,11 +558,6 @@ func (b *Bus) admit(ctx context.Context, from, to, thread string) error {
 		}
 		return nil
 	}
-	if at, err := b.continuedAt(ctx, thread); err != nil {
-		return err
-	} else if at.After(since) {
-		since = at
-	}
 	n, err := b.store.CountSent(ctx, from, to, thread, since)
 	if err != nil {
 		return err
