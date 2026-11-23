@@ -46,6 +46,10 @@ type Bus struct {
 	// LoopLimit overrides the loop-limit setting; negative turns the check off.
 	LoopLimit int
 
+	// sending is held from admitting a message to saving it, so that messages
+	// sent at once can't all pass on the same count.
+	sending sync.Mutex
+
 	mu      sync.Mutex
 	waiters map[string]map[chan struct{}]struct{}
 	kick    chan struct{}
@@ -241,8 +245,7 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 	}
 
 	thread := in.ThreadID
-	opens := in.InReplyTo == "" // whether this starts a new thread
-	var pinned string           // the session the thread says should get this
+	var pinned string // the session the thread says should get this
 	var parent Message
 	if in.InReplyTo != "" {
 		var err error
@@ -286,7 +289,6 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 		if exists && !member {
 			return Message{}, fmt.Errorf("%w: not a participant in thread %q", ErrForbidden, thread)
 		}
-		opens = !exists
 	}
 	if in.To == "" {
 		return Message{}, fmt.Errorf("%w: to is required unless in_reply_to is set", ErrInvalid)
@@ -305,13 +307,6 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 	if errors.Is(err, ErrNotFound) {
 		return Message{}, fmt.Errorf("%w: unknown agent %q", ErrNotFound, addr.Agent)
 	} else if err != nil {
-		return Message{}, err
-	}
-	counted := thread
-	if opens {
-		counted = ""
-	}
-	if err := b.admit(ctx, from, to.Name, counted); err != nil {
 		return Message{}, err
 	}
 	// In a thread already going, it goes to a session of that agent taking
@@ -355,7 +350,7 @@ func (b *Bus) Send(ctx context.Context, from string, in SendInput) (Message, err
 		Status:      StatusQueued,
 		CreatedAt:   time.Now().UTC(),
 	}
-	if err := b.store.SendMessage(ctx, m, Thread{ID: thread, Title: title, CreatedBy: from, CreatedAt: m.CreatedAt}); err != nil {
+	if err := b.admitAndSave(ctx, m, Thread{ID: thread, Title: title, CreatedBy: from, CreatedAt: m.CreatedAt}); err != nil {
 		return Message{}, err
 	}
 	b.emitMessage(StatusQueued, m, "", "")
@@ -526,8 +521,18 @@ func (b *Bus) Notice(ctx context.Context, m Message, kind, text string) error {
 	return nil
 }
 
+// admitAndSave stores m if it's allowed.
+func (b *Bus) admitAndSave(ctx context.Context, m Message, t Thread) error {
+	b.sending.Lock()
+	defer b.sending.Unlock()
+	if err := b.admit(ctx, m.From, m.To, m.ThreadID); err != nil {
+		return err
+	}
+	return b.store.SendMessage(ctx, m, t)
+}
+
 // admit decides whether from may message to right now, in thread or, when
-// that's empty, by starting one. Rules about who may reach whom belong here,
+// there's no such thread yet, by starting it. Rules about who may reach whom belong here,
 // including any later ones for other machines.
 //
 // Each thread has its own count. Threads started have one too, so a loop that
@@ -538,7 +543,11 @@ func (b *Bus) admit(ctx context.Context, from, to, thread string) error {
 		return err
 	}
 	since := time.Now().Add(-LoopWindow)
-	if thread == "" {
+	exists, _, err := b.store.ThreadAccess(ctx, thread, from)
+	if err != nil {
+		return err
+	}
+	if !exists {
 		n, err := b.store.CountStarted(ctx, from, to, since)
 		if err != nil {
 			return err

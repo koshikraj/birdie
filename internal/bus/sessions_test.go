@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -354,6 +356,43 @@ func TestLoopLimitPerThread(t *testing.T) {
 	}
 	if _, err := send(in); !errors.Is(err, bus.ErrLoop) {
 		t.Fatalf("the fresh allowance runs out too: %v", err)
+	}
+}
+
+func TestLoopLimitAtOnce(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBus(t)
+	addAgent(t, st, "a", nil)
+	addAgent(t, st, "b", nil)
+	b.LoopLimit = 3
+	// Sent all at once: into one thread, into one new thread, and each
+	// starting its own.
+	first, err := b.Send(ctx, "a", bus.SendInput{To: "b", Content: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		thread string
+		want   int32
+	}{{first.ThreadID, 2}, {"thr_mine", 3}, {"", 1}} {
+		var sent atomic.Int32
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for range 20 {
+			wg.Go(func() {
+				<-start
+				if _, err := b.Send(ctx, "a", bus.SendInput{To: "b", ThreadID: tt.thread, Content: "x"}); err == nil {
+					sent.Add(1)
+				} else if !errors.Is(err, bus.ErrLoop) {
+					t.Error(err)
+				}
+			})
+		}
+		close(start)
+		wg.Wait()
+		if sent.Load() != tt.want {
+			t.Errorf("thread %q: %d got through, want %d", tt.thread, sent.Load(), tt.want)
+		}
 	}
 }
 
